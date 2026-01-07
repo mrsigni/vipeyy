@@ -1,0 +1,228 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Admin {
+  id        String          @id @default(uuid())
+  email     String          @unique @db.VarChar(100)
+  password  String          @db.VarChar(255)
+  name      String          @db.VarChar(50)
+  sessions  AdminSession[]  
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  @@map("admin")
+}
+
+model AdminSession {
+  id           String   @id @default(uuid())
+  sessionToken String   @unique @db.VarChar(255)
+  adminId      String
+  admin        Admin    @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  expires      DateTime
+  createdAt    DateTime @default(now())
+
+  @@index([adminId])
+  @@map("adminsession")
+}
+
+model User {
+  id                      String                   @id @default(uuid())
+  fullName                String                   @db.VarChar(50)
+  username                String                   @unique @db.VarChar(50)
+  email                   String                   @unique @db.VarChar(100)
+  password                String                   @db.VarChar(255)
+  whatsapp                String                   @unique @db.VarChar(20)
+  emailVerificationTokens EmailVerificationToken[]
+  isEmailVerified         Boolean                  @default(false)
+  totalEarnings           Float                    @default(0)
+  isSuspended             Boolean                  @default(false)
+  sessions                Session[]
+  videos                  Video[]
+  folders                 Folder[]
+  paymentMethods          PaymentMethod[]
+  payouts                 VideoPayout[]
+  videoLikes              VideoLike[]              // Added video likes relationship
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+
+  @@index([email])
+  @@index([totalEarnings])
+  @@map("user")
+}
+
+model EmailVerificationToken {
+  id        Int      @id @default(autoincrement())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("emailverificationtoken")
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  sessionToken String   @unique @db.VarChar(255)
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expires      DateTime
+
+  @@index([userId])
+  @@map("session")
+}
+
+model Folder {
+  id        String   @id @default(uuid())
+  name      String   @db.VarChar(100)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parentId  String?
+  parent    Folder?  @relation("FolderHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children  Folder[] @relation("FolderHierarchy")
+  videos    Video[]
+  color     String?  @db.VarChar(7)
+  isShared  Boolean  @default(false)
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([parentId])
+  @@index([userId])
+  @@index([userId, name])
+  @@index([userId, parentId])
+  @@map("folder")
+}
+
+model Video {
+  id                Int                 @id @default(autoincrement())
+  videoId           String              @unique @db.VarChar(50)
+  userId            String
+  user              User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  folderId          String?
+  folder            Folder?             @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  earnings          Float               @default(0)
+  withdrawnEarnings Float               @default(0)
+  totalViews        Int                 @default(0)
+  lastViewedAt      DateTime?
+  title             String?             @db.VarChar(255)
+  description       String?             @db.Text
+  thumbnail         String?             @db.Text
+  duration          Int?
+  fileSize          Int?
+  mimeType          String?             @db.VarChar(100)
+  isPublic          Boolean             @default(true)
+  totalLikes        Int                 @default(0)          // Added total likes count
+  totalDislikes     Int                 @default(0)          // Added total dislikes count
+  views             VideoView[]
+  payouts           VideoPayout[]
+  payoutDetails     VideoPayoutDetail[]
+  likes             VideoLike[]                              // Added likes relationship
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt @default(now())
+
+  @@index([userId])
+  @@index([videoId])
+  @@index([folderId])
+  @@index([userId, folderId])
+  @@index([createdAt])
+  @@index([totalLikes])                                     // Added index for performance
+  @@index([totalDislikes])                                  // Added index for performance
+  @@map("video")
+}
+
+// New VideoLike model for likes/dislikes system
+model VideoLike {
+  id        Int      @id @default(autoincrement())
+  videoId   Int
+  video     Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  userId    String?                                          // Nullable for anonymous users
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ip        String   @db.VarChar(45)                         // Store IP for anonymous tracking
+  isLike    Boolean                                          // true = like, false = dislike
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([videoId, userId])                                // Prevent duplicate likes from same user
+  @@unique([videoId, ip])                                    // Prevent duplicate likes from same IP (for anonymous)
+  @@index([videoId])
+  @@index([userId])
+  @@index([ip])
+  @@map("videolike")
+}
+
+model VideoView {
+  id        Int      @id @default(autoincrement())
+  videoId   Int
+  video     Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  ip        String   @db.VarChar(45)
+  userAgent String   @db.Text
+  country   String?  @db.VarChar(50)
+  isValid   Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@index([videoId, createdAt])
+  @@index([ip, createdAt])
+  @@map("videoview")
+}
+
+model VideoPayout {
+  id        Int                   @id @default(autoincrement())
+  videoId   Int?
+  video     Video?                @relation(fields: [videoId], references: [id])
+  userId    String
+  user      User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount    Float
+  status    String                @default("pending")
+  paidAt    DateTime              @default(now())
+  details   VideoPayoutDetail[]
+
+  @@index([videoId])
+  @@index([userId])
+  @@index([status])
+  @@map("videopayout")
+}
+
+model VideoPayoutDetail {
+  id        Int         @id @default(autoincrement())
+  payoutId  Int
+  payout    VideoPayout @relation(fields: [payoutId], references: [id], onDelete: Cascade)
+  videoId   Int
+  video     Video       @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  amount    Float
+  createdAt DateTime    @default(now())
+
+  @@index([payoutId])
+  @@index([videoId])
+  @@map("videopayoutdetail")
+}
+
+model PaymentMethod {
+  id        Int      @id @default(autoincrement())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String   @db.VarChar(50)
+  name      String   @db.VarChar(100)
+  number    String   @db.VarChar(100)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@map("paymentmethod")
+}
+
+model WebSettings {
+  id        Int      @id @default(1)
+  cpm       Float    @default(2.0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("websettings")
+}

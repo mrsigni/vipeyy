@@ -1,7 +1,10 @@
-import { defineConfig } from '@prisma/client/generator-helper';
-
-export default defineConfig({
+export default {
+    datasources: {
+        db: {
+            url: process.env.DATABASE_URL,
+        },
+    },
     seed: {
         command: 'ts-node --compiler-options {"module":"CommonJS"} prisma/seed.ts',
     },
-});
+};

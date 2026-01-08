@@ -1,10 +1,8 @@
-export default {
-    datasources: {
-        db: {
-            url: process.env.DATABASE_URL,
-        },
+import 'dotenv/config';
+import { defineConfig, env } from 'prisma/config';
+
+export default defineConfig({
+    datasource: {
+        url: env('DATABASE_URL'),
     },
-    seed: {
-        command: 'ts-node --compiler-options {"module":"CommonJS"} prisma/seed.ts',
-    },
-};
+});

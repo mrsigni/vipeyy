@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
-
-const prisma = new PrismaClient();
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -12,7 +10,7 @@ export async function DELETE(
 ) {
   try {
     const { id } = await ctx.params; // await params sesuai Next.js 15+
-    
+
     // Validasi ID
     if (!id) {
       return NextResponse.json(
@@ -76,7 +74,7 @@ export async function DELETE(
     // Cek apakah folder memiliki child folders
     if (existingFolder.children.length > 0) {
       return NextResponse.json(
-        { 
+        {
           error: 'Cannot delete folder: contains subfolders',
           subfolders: existingFolder.children.map(child => ({
             id: child.id,
@@ -90,7 +88,7 @@ export async function DELETE(
     // Cek apakah folder memiliki videos
     if (existingFolder.videos.length > 0) {
       return NextResponse.json(
-        { 
+        {
           error: 'Cannot delete folder: contains videos',
           videos: existingFolder.videos.map(video => ({
             id: video.id,
@@ -129,7 +127,7 @@ export async function DELETE(
     });
 
     return NextResponse.json(
-      { 
+      {
         message: 'Folder deleted successfully',
         deletedFolder: {
           id: deletedFolder.id,
@@ -142,7 +140,7 @@ export async function DELETE(
 
   } catch (error) {
     console.error('Error deleting folder:', error);
-    
+
     // Handle specific Prisma errors
     if (error instanceof Error) {
       if (error.message.includes('Record to delete does not exist')) {
@@ -151,7 +149,7 @@ export async function DELETE(
           { status: 404 }
         );
       }
-      
+
       if (error.message.includes('Foreign key constraint')) {
         return NextResponse.json(
           { error: 'Cannot delete folder: has dependent data' },
@@ -183,7 +181,7 @@ export async function POST(
 ) {
   try {
     const { force } = await request.json();
-    
+
     if (!force) {
       return NextResponse.json(
         { error: 'Force parameter is required for cascade delete' },
@@ -192,7 +190,7 @@ export async function POST(
     }
 
     const { id } = await ctx.params; // await params
-    
+
     if (!id) {
       return NextResponse.json(
         { error: 'Folder ID is required' },
@@ -280,7 +278,7 @@ export async function POST(
     });
 
     return NextResponse.json(
-      { 
+      {
         message: 'Folder and all contents deleted successfully',
         deletedFolderId: id
       },

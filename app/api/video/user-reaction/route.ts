@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/prisma';
 
 interface UserReactionResponse {
   hasReaction: boolean;
@@ -25,9 +23,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
     // Get client IP for anonymous users
     const forwarded = request.headers.get('x-forwarded-for');
-    const ip = forwarded ? forwarded.split(',')[0] : 
-               request.headers.get('x-real-ip') || 
-               'unknown';
+    const ip = forwarded ? forwarded.split(',')[0] :
+      request.headers.get('x-real-ip') ||
+      'unknown';
 
     // Find the video
     const video = await prisma.video.findFirst({

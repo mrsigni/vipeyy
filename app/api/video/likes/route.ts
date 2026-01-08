@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/prisma';
 
 interface LikeRequestBody {
   videoId: string;
@@ -81,9 +79,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     // Get client IP
     const forwarded = request.headers.get('x-forwarded-for');
-    const ip = forwarded ? forwarded.split(',')[0] : 
-               request.headers.get('x-real-ip') || 
-               'unknown';
+    const ip = forwarded ? forwarded.split(',')[0] :
+      request.headers.get('x-real-ip') ||
+      'unknown';
 
     // Find the video by videoId
     const video = await prisma.video.findFirst({
@@ -115,13 +113,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         await (prisma as any).videoLike.delete({
           where: { id: existingLike.id }
         });
-        
+
         if (isLike) {
           likeDelta = -1;
         } else {
           dislikeDelta = -1;
         }
-        
+
         result = { action: 'removed', isLike };
       } else {
         // Switch from like to dislike or vice versa

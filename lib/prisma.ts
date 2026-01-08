@@ -1,11 +1,12 @@
 import { PrismaClient } from "@prisma/client";
-import { PrismaMariaDb } from "@prisma/adapter-mariadb";
+import { PrismaTiDBCloud } from "@tidbcloud/prisma-adapter";
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
 };
 
-const adapter = new PrismaMariaDb(process.env.DATABASE_URL!);
+// TiDB Cloud serverless adapter - pass config object with url property
+const adapter = new PrismaTiDBCloud({ url: process.env.DATABASE_URL! });
 
 export const prisma = globalForPrisma.prisma ?? new PrismaClient({ adapter });
 

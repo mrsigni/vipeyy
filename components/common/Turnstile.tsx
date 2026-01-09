@@ -16,8 +16,11 @@ declare global {
                     sitekey: string;
                     callback: (token: string) => void;
                     theme?: "light" | "dark";
+                    size?: "normal" | "invisible" | "compact";
+                    appearance?: "always" | "execute" | "interaction-only";
                 }
             ) => string;
+            execute: (container?: string | HTMLElement, options?: { action?: string }) => void;
             remove: (widgetId: string) => void;
         };
         onloadTurnstileCallback?: () => void;

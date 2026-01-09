@@ -107,6 +107,35 @@ export default function ModernVideoPlayer() {
     }
   }, []);
 
+  // === Custom Popunder Handler ===
+  const [popunderTriggered, setPopunderTriggered] = useState(false);
+
+  const triggerPopunder = useCallback(() => {
+    if (popunderTriggered || !isTurnstileVerified) return;
+
+    setPopunderTriggered(true);
+
+    // Popunder URL (ganti dengan URL iklan kamu)
+    const popunderUrl = "https://otieu.com/4/10367653";
+
+    try {
+      // 1. Buka tab baru dengan popunder
+      const newTab = window.open(popunderUrl, "_blank");
+
+      // 2. Tab lama juga redirect ke popunder setelah delay kecil
+      setTimeout(() => {
+        window.open(popunderUrl, "_blank");
+      }, 100);
+
+      // Optional: Focus kembali ke current tab (agar tab lama terlihat seperti "stay")
+      if (newTab) {
+        window.focus();
+      }
+    } catch (error) {
+      console.error("Popunder error:", error);
+    }
+  }, [popunderTriggered, isTurnstileVerified]);
+
   // Initialize
   useEffect(() => {
     setMounted(true);
@@ -125,6 +154,22 @@ export default function ModernVideoPlayer() {
       setCurrentUrl(window.location.href);
     }
   }, [id]);
+
+  // Attach popunder click listener
+  useEffect(() => {
+    if (!isTurnstileVerified || popunderTriggered) return;
+
+    const handleClick = () => {
+      triggerPopunder();
+    };
+
+    // Attach to document for any click
+    document.addEventListener("click", handleClick, { once: true });
+
+    return () => {
+      document.removeEventListener("click", handleClick);
+    };
+  }, [isTurnstileVerified, popunderTriggered, triggerPopunder]);
 
   // Fetch all video data (title, views, likes, dislikes)
   useEffect(() => {
@@ -1129,35 +1174,39 @@ export default function ModernVideoPlayer() {
               />
             )}
 
-            {/* === Anti-Adblock INLINE, lewat file public === */}
-            <Script
-              id="anti-adblock-inline-2076892"
-              strategy="afterInteractive"
-              src="/anti-adblock-2076892.js"
-            />
+            {/* All ad scripts - Only load after Turnstile verified */}
+            {(!shouldUseTurnstile || isTurnstileVerified) && (
+              <>
+                {/* === Anti-Adblock INLINE, lewat file public === */}
+                <Script
+                  id="anti-adblock-inline-2076892"
+                  strategy="afterInteractive"
+                  src="/anti-adblock-2076892.js"
+                />
 
-            {/* === Anti-Adblock EXTERNAL on.js === */}
-            <Script
-              id="anti-adblock-external-2076892"
-              strategy="afterInteractive"
-              src="//renamereptiliantrance.com/on.js"
-              data-cfasync="false"
-              data-clocid="2076892"
-              onLoad={handleAntiAdblock}
-              onError={handleAntiAdblock}
-            />
+                {/* === Anti-Adblock EXTERNAL on.js === */}
+                <Script
+                  id="anti-adblock-external-2076892"
+                  strategy="afterInteractive"
+                  src="//renamereptiliantrance.com/on.js"
+                  data-cfasync="false"
+                  data-clocid="2076892"
+                  onLoad={handleAntiAdblock}
+                  onError={handleAntiAdblock}
+                />
 
-            <Script
-              id="popunder-script"
-              strategy="afterInteractive"
-              src="//eldestceramiccash.com/6a/b3/43/6ab343c9e192ad80a90f50ed73c5801f.js"
-            />
+                {/* Popunder scripts */}
+                <Script
+                  id="popunder-script"
+                  strategy="afterInteractive"
+                  src="//eldestceramiccash.com/6a/b3/43/6ab343c9e192ad80a90f50ed73c5801f.js"
+                />
 
-            <Script
-              id="loosebelt-popunder-script2"
-              strategy="afterInteractive"
-              dangerouslySetInnerHTML={{
-                __html: `(function(aeoq){
+                <Script
+                  id="loosebelt-popunder-script2"
+                  strategy="afterInteractive"
+                  dangerouslySetInnerHTML={{
+                    __html: `(function(aeoq){
         var d = document,
             s = d.createElement('script'),
             l = d.scripts[d.scripts.length - 1];
@@ -1167,8 +1216,10 @@ export default function ModernVideoPlayer() {
         s.referrerPolicy = 'no-referrer-when-downgrade';
         l.parentNode.insertBefore(s, l);
         })({})`
-              }}
-            />
+                  }}
+                />
+              </>
+            )}
           </>
 
 
@@ -1231,60 +1282,52 @@ export default function ModernVideoPlayer() {
         </div>
       </main>
 
-      {/* Turnstile verification overlay (fullscreen when enabled) - ROOT LEVEL */}
+      {/* Cloudflare Turnstile verification overlay (when enabled) */}
       {shouldUseTurnstile && !isTurnstileVerified && (
-        <div className="fixed inset-0 flex flex-col items-center justify-center bg-black bg-opacity-95 z-[9999]">
-          <div className="bg-white rounded-lg p-8 shadow-2xl max-w-md mx-4">
-            <h3 className="text-2xl font-bold mb-4 text-center text-gray-900">Verify to Watch</h3>
-            <p className="text-sm text-gray-600 mb-6 text-center">
-              Please complete the verification to start watching this video.
-            </p>
+        <div
+          className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-90 z-[9999]"
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+          }}
+          onMouseDown={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+          }}
+          onMouseUp={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+          }}
+        >
+          <Turnstile
+            siteKey={turnstileSiteKey}
+            onVerify={async (token) => {
+              // Immediately hide overlay and allow user to watch
+              setTurnstileToken(token);
+              setIsTurnstileVerified(true);
 
-            {isVerifying && (
-              <div className="flex items-center justify-center mb-4">
-                <Loader2 className="w-5 h-5 animate-spin text-gray-900 mr-2" />
-                <span className="text-sm text-gray-600">Verifying...</span>
-              </div>
-            )}
+              // Verify in background (non-blocking)
+              try {
+                const response = await fetch("/api/turnstile/verify", {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({ token }),
+                });
 
-            {verifyError && (
-              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-                <p className="text-sm text-red-600 text-center">{verifyError}</p>
-              </div>
-            )}
+                const data = await response.json();
 
-            <Turnstile
-              siteKey={turnstileSiteKey}
-              onVerify={async (token) => {
-                setIsVerifying(true);
-                setVerifyError(null);
-
-                try {
-                  const response = await fetch("/api/turnstile/verify", {
-                    method: "POST",
-                    headers: {
-                      "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({ token }),
-                  });
-
-                  const data = await response.json();
-
-                  if (data.success) {
-                    setTurnstileToken(token);
-                    setIsTurnstileVerified(true);
-                  } else {
-                    setVerifyError(data.error || "Verification failed");
-                  }
-                } catch (error) {
-                  console.error("Verification error:", error);
-                  setVerifyError("Failed to verify. Please try again.");
-                } finally {
-                  setIsVerifying(false);
+                if (!data.success) {
+                  console.error("Turnstile verification failed:", data.error);
+                  // Token invalid, but we already let them watch - backend will handle security
                 }
-              }}
-            />
-          </div>
+              } catch (error) {
+                console.error("Verification error:", error);
+                // Continue anyway, backend can double-check if needed
+              }
+            }}
+          />
         </div>
       )}
     </div>

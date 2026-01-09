@@ -5,7 +5,6 @@ const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
 };
 
-// TiDB Cloud serverless adapter - pass config object with url property
 const adapter = new PrismaTiDBCloud({ url: process.env.DATABASE_URL! });
 
 export const prisma = globalForPrisma.prisma ?? new PrismaClient({ adapter });

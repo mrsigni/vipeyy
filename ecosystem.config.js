@@ -26,8 +26,6 @@ module.exports = {
             min_uptime: '10s',
 
             kill_timeout: 5000,
-            wait_ready: true,
-            listen_timeout: 10000,
 
             watch: false,
             ignore_watch: ['node_modules', 'logs', '.next'],

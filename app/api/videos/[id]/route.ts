@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma';
 
 type ParamsPromise = Promise<{ id: string }>;
 
-// GET /api/videos/[id]
+// GET /api/videos/[id] -> Ambil detail 1 video
 export async function GET(req: NextRequest, ctx: { params: ParamsPromise }) {
   try {
     const userId = await getUserId();
@@ -41,7 +41,7 @@ export async function GET(req: NextRequest, ctx: { params: ParamsPromise }) {
   }
 }
 
-// PUT /api/videos/[id]
+// PUT /api/videos/[id] -> Update 1 video
 export async function PUT(req: NextRequest, ctx: { params: ParamsPromise }) {
   try {
     const userId = await getUserId();
@@ -121,7 +121,7 @@ export async function PUT(req: NextRequest, ctx: { params: ParamsPromise }) {
         description: description !== undefined ? (description?.trim() || null) : undefined,
         thumbnail: thumbnail !== undefined ? (thumbnail?.trim() || null) : undefined,
         duration: durationForDB,
-        fileSize: fileSizeForDB, // Fixed: now properly typed as number | null | undefined
+        fileSize: fileSizeForDB, 
         mimeType: mimeType !== undefined ? (mimeType?.trim() || null) : undefined,
         isPublic: isPublic !== undefined ? Boolean(isPublic) : undefined,
       },
@@ -171,7 +171,7 @@ export async function PUT(req: NextRequest, ctx: { params: ParamsPromise }) {
   }
 }
 
-// DELETE /api/videos/[id]
+// DELETE /api/videos/[id] -> Hapus 1 video
 export async function DELETE(req: NextRequest, ctx: { params: ParamsPromise }) {
   try {
     const userId = await getUserId();

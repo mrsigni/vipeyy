@@ -5,8 +5,6 @@ import { Eye, EyeOff, Loader } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { z } from "zod";
 import { useRouter } from "next/navigation";
-import Script from "next/script";
-import Turnstile from "@/components/common/Turnstile";
 import {
   Select,
   SelectContent,
@@ -57,20 +55,9 @@ export default function RegisterPage() {
   const [countryCode, setCountryCode] = useState("+62");
   const router = useRouter();
 
-  const turnstileSiteKey = process.env.NEXT_PUBLIC_CLOUDFLARE_TURNSTILE_SITE_KEY || "";
-  const shouldUseTurnstile = process.env.NEXT_PUBLIC_TURNSTILE === "true";
-  const [isTurnstileVerified, setIsTurnstileVerified] = useState(!shouldUseTurnstile);
-  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrors({});
-
-    if (shouldUseTurnstile && !isTurnstileVerified) {
-      toast.error("Silakan verifikasi Turnstile terlebih dahulu");
-      return;
-    }
-
     setLoading(true);
 
     const result = registerSchema.safeParse({
@@ -102,7 +89,6 @@ export default function RegisterPage() {
           email,
           password,
           confirmPassword,
-          turnstileToken: shouldUseTurnstile ? turnstileToken : undefined,
         }),
       });
 
@@ -235,7 +221,7 @@ export default function RegisterPage() {
                   <SelectTrigger className="w-[100px] border-none px-2 text-sm focus:ring-0 focus:ring-offset-0 shadow-none rounded-none bg-white">
                     <SelectValue placeholder="+62" />
                   </SelectTrigger>
-                  <SelectContent className="bg-white dark:bg-neutral-900 border border-gray-200 dark:border-gray-700 shadow-lg">
+                    <SelectContent className="bg-white dark:bg-neutral-900 border border-gray-200 dark:border-gray-700 shadow-lg">
                     {countryCodes.map((c) => (
                       <SelectItem key={c.code} value={c.code}>
                         {c.icon} {c.code}
@@ -274,8 +260,9 @@ export default function RegisterPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Password"
-                  className={`w-full h-full px-4 pr-10 text-sm border rounded ${errors.password ? "border-red-500" : ""
-                    }`}
+                  className={`w-full h-full px-4 pr-10 text-sm border rounded ${
+                    errors.password ? "border-red-500" : ""
+                  }`}
                 />
                 <button
                   type="button"
@@ -297,8 +284,9 @@ export default function RegisterPage() {
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="Konfirmasi Password"
-                  className={`w-full h-full px-4 pr-10 text-sm border rounded ${errors.confirmPassword ? "border-red-500" : ""
-                    }`}
+                  className={`w-full h-full px-4 pr-10 text-sm border rounded ${
+                    errors.confirmPassword ? "border-red-500" : ""
+                  }`}
                 />
                 <button
                   type="button"
@@ -319,45 +307,10 @@ export default function RegisterPage() {
                 </p>
               )}
             </div>
-
-            {shouldUseTurnstile && (
-              <div className="mb-4 flex justify-center">
-                <Turnstile
-                  siteKey={turnstileSiteKey}
-                  onVerify={async (token) => {
-                    setTurnstileToken(token);
-                    setIsTurnstileVerified(true);
-
-                    try {
-                      const response = await fetch("/api/turnstile/verify", {
-                        method: "POST",
-                        headers: {
-                          "Content-Type": "application/json",
-                        },
-                        body: JSON.stringify({ token }),
-                      });
-
-                      const data = await response.json();
-
-                      if (!data.success) {
-                        console.error("Turnstile verification failed:", data.error);
-                        setIsTurnstileVerified(false);
-                        setTurnstileToken(null);
-                      }
-                    } catch (error) {
-                      console.error("Verification error:", error);
-                      setIsTurnstileVerified(false);
-                      setTurnstileToken(null);
-                    }
-                  }}
-                />
-              </div>
-            )}
-
             <button
               type="submit"
-              disabled={loading || (shouldUseTurnstile && !isTurnstileVerified)}
-              className="bg-black text-white font-medium w-full py-2 rounded-full hover:opacity-90 transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={loading}
+              className="bg-black text-white font-medium w-full py-2 rounded-full hover:opacity-90 transition flex items-center justify-center gap-2"
             >
               {loading ? <Loader className="w-4 h-4 animate-spin" /> : "Daftar"}
             </button>
@@ -403,16 +356,6 @@ export default function RegisterPage() {
           </ul>
         </nav>
       </footer>
-
-      {shouldUseTurnstile && (
-        <Script
-          id="turnstile-script"
-          src="https://challenges.cloudflare.com/turnstile/v0/api.js"
-          strategy="afterInteractive"
-          async
-          defer
-        />
-      )}
     </div>
   );
 }

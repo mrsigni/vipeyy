@@ -1,12 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
-interface UserReactionResponse {
-  hasReaction: boolean;
-  reaction: 'like' | 'dislike' | null;
-  createdAt?: Date;
-}
-
 // Get user's current reaction (like/dislike) for a video
 export async function GET(request: NextRequest): Promise<NextResponse> {
   try {
@@ -23,13 +17,15 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
     // Get client IP for anonymous users
     const forwarded = request.headers.get('x-forwarded-for');
-    const ip = forwarded ? forwarded.split(',')[0] :
+    const ip = forwarded ? forwarded.split(',')[0].trim() :
       request.headers.get('x-real-ip') ||
+      request.headers.get('cf-connecting-ip') ||
       'unknown';
 
     // Find the video
     const video = await prisma.video.findFirst({
-      where: { videoId }
+      where: { videoId },
+      select: { id: true }
     });
 
     if (!video) {
@@ -43,7 +39,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const userReaction = await prisma.videoLike.findFirst({
       where: {
         videoId: video.id,
-        ...(userId ? { userId } : { ip, userId: null })
+        OR: [
+          ...(userId ? [{ userId }] : []),
+          { ip, userId: null }
+        ]
       },
       select: {
         isLike: true,
@@ -65,7 +64,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     });
 
   } catch (error) {
-    console.error('Error fetching user reaction:', error);
+    console.error('[User Reaction Error]:', error);
     return NextResponse.json(
       { error: 'Failed to fetch user reaction' },
       { status: 500 }

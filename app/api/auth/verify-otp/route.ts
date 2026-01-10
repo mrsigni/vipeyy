@@ -1,41 +1,14 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { rateLimit, getClientIp } from "@/lib/rate-limit";
 
 const verifyOtpSchema = z.object({
   email: z.string().email("Email tidak valid"),
   token: z.string().length(6, "OTP harus 6 digit"),
 });
 
-const limiter = rateLimit({
-  interval: 10 * 60 * 1000,
-  uniqueTokenPerInterval: 500,
-});
-
-export async function POST(req: NextRequest) {
+export async function POST(req: Request) {
   try {
-    const ip = getClientIp(req);
-    const rateLimitResult = limiter.check(req, 5, `verify_otp_${ip}`);
-
-    if (!rateLimitResult.success) {
-      return NextResponse.json(
-        {
-          message: `Terlalu banyak percobaan verifikasi OTP. Silakan coba lagi dalam ${rateLimitResult.retryAfter} detik.`,
-          retryAfter: rateLimitResult.retryAfter
-        },
-        {
-          status: 429,
-          headers: {
-            'X-RateLimit-Limit': '5',
-            'X-RateLimit-Remaining': '0',
-            'X-RateLimit-Reset': new Date(rateLimitResult.reset).toISOString(),
-            'Retry-After': rateLimitResult.retryAfter.toString(),
-          }
-        }
-      );
-    }
-
     const body = await req.json();
     const result = verifyOtpSchema.safeParse(body);
 
@@ -74,16 +47,7 @@ export async function POST(req: NextRequest) {
       }),
     ]);
 
-    return NextResponse.json(
-      { message: "Email berhasil diverifikasi" },
-      {
-        headers: {
-          'X-RateLimit-Limit': '5',
-          'X-RateLimit-Remaining': rateLimitResult.remaining.toString(),
-          'X-RateLimit-Reset': new Date(rateLimitResult.reset).toISOString(),
-        }
-      }
-    );
+    return NextResponse.json({ message: "Email berhasil diverifikasi" });
   } catch (error) {
     if (process.env.NODE_ENV !== "production") {
       console.error("Verify OTP error:", error);

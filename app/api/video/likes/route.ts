@@ -7,17 +7,6 @@ interface LikeRequestBody {
   userId?: string | null;
 }
 
-interface VideoLikeResponse {
-  videoId: string;
-  totalLikes: number;
-  totalDislikes: number;
-}
-
-interface LikeActionResponse extends VideoLikeResponse {
-  action: 'created' | 'updated' | 'removed';
-  isLike: boolean;
-}
-
 // Get likes and dislikes for a video
 export async function GET(request: NextRequest): Promise<NextResponse> {
   try {
@@ -31,7 +20,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       );
     }
 
-    // Get video with likes/dislikes
     const video = await prisma.video.findFirst({
       where: { videoId },
       select: {
@@ -40,7 +28,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         totalLikes: true,
         totalDislikes: true,
       }
-    }) as any; // Temporary fix until migration is complete
+    });
 
     if (!video) {
       return NextResponse.json(
@@ -56,7 +44,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     });
 
   } catch (error) {
-    console.error('Error fetching video likes:', error);
+    console.error('[Video Likes GET Error]:', error);
     return NextResponse.json(
       { error: 'Failed to fetch video likes' },
       { status: 500 }
@@ -79,8 +67,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     // Get client IP
     const forwarded = request.headers.get('x-forwarded-for');
-    const ip = forwarded ? forwarded.split(',')[0] :
+    const ip = forwarded ? forwarded.split(',')[0].trim() :
       request.headers.get('x-real-ip') ||
+      request.headers.get('cf-connecting-ip') ||
       'unknown';
 
     // Find the video by videoId
@@ -95,104 +84,82 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     }
 
-    // Check for existing like/dislike
-    const existingLike = await (prisma as any).videoLike.findFirst({
+    // Check for existing like/dislike - use simpler query
+    const existingLike = await prisma.videoLike.findFirst({
       where: {
         videoId: video.id,
-        ...(userId ? { userId } : { ip, userId: null })
+        OR: [
+          ...(userId ? [{ userId }] : []),
+          { ip, userId: null }
+        ]
       }
     });
 
+    let action: 'created' | 'updated' | 'removed';
     let likeDelta = 0;
     let dislikeDelta = 0;
 
-    const { result, video: updatedVideo } = await prisma.$transaction(async (tx) => {
-      let actionResult: { action: 'created' | 'updated' | 'removed'; isLike: boolean };
-
-      if (existingLike) {
-        if (existingLike.isLike === isLike) {
-          // Remove the like/dislike (toggle off)
-          await (tx as any).videoLike.delete({
-            where: { id: existingLike.id }
-          });
-
-          if (isLike) {
-            likeDelta = -1;
-          } else {
-            dislikeDelta = -1;
-          }
-
-          actionResult = { action: 'removed', isLike };
-        } else {
-          // Switch from like to dislike or vice versa
-          await (tx as any).videoLike.update({
-            where: { id: existingLike.id },
-            data: { isLike, updatedAt: new Date() }
-          });
-
-          if (isLike) {
-            likeDelta = 1;
-            dislikeDelta = -1;
-          } else {
-            likeDelta = -1;
-            dislikeDelta = 1;
-          }
-
-          actionResult = { action: 'updated', isLike };
-        }
-      } else {
-        // Create new like/dislike
-        await (tx as any).videoLike.create({
-          data: {
-            videoId: video.id,
-            userId,
-            ip,
-            isLike,
-          }
+    if (existingLike) {
+      if (existingLike.isLike === isLike) {
+        // Remove the like/dislike (toggle off)
+        await prisma.videoLike.delete({
+          where: { id: existingLike.id }
         });
 
-        if (isLike) {
-          likeDelta = 1;
-        } else {
-          dislikeDelta = 1;
-        }
+        likeDelta = isLike ? -1 : 0;
+        dislikeDelta = isLike ? 0 : -1;
+        action = 'removed';
+      } else {
+        // Switch from like to dislike or vice versa
+        await prisma.videoLike.update({
+          where: { id: existingLike.id },
+          data: { isLike, updatedAt: new Date() }
+        });
 
-        actionResult = { action: 'created', isLike };
+        likeDelta = isLike ? 1 : -1;
+        dislikeDelta = isLike ? -1 : 1;
+        action = 'updated';
       }
-
-      // Update video totals
-      const videoData = await tx.video.update({
-        where: { id: video.id },
+    } else {
+      // Create new like/dislike
+      await prisma.videoLike.create({
         data: {
-          totalLikes: {
-            increment: likeDelta
-          },
-          totalDislikes: {
-            increment: dislikeDelta
-          }
-        },
-        select: {
-          videoId: true,
-          totalLikes: true,
-          totalDislikes: true,
+          videoId: video.id,
+          userId,
+          ip,
+          isLike,
         }
-      }) as any;
+      });
 
-      return { result: actionResult, video: videoData };
-    }, {
-      timeout: 30000,
-      maxWait: 5000,
+      likeDelta = isLike ? 1 : 0;
+      dislikeDelta = isLike ? 0 : 1;
+      action = 'created';
+    }
+
+    // Update video totals in a separate query
+    const updatedVideo = await prisma.video.update({
+      where: { id: video.id },
+      data: {
+        totalLikes: { increment: likeDelta },
+        totalDislikes: { increment: dislikeDelta }
+      },
+      select: {
+        videoId: true,
+        totalLikes: true,
+        totalDislikes: true,
+      }
     });
 
     return NextResponse.json({
-      ...result,
+      action,
+      isLike,
       videoId: updatedVideo.videoId,
       totalLikes: updatedVideo.totalLikes || 0,
       totalDislikes: updatedVideo.totalDislikes || 0,
     });
 
   } catch (error) {
-    console.error('Error handling video like:', error);
+    console.error('[Video Likes POST Error]:', error);
     return NextResponse.json(
       { error: 'Failed to process like/dislike' },
       { status: 500 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useCallback } from "react";
 
 interface TurnstileProps {
     onVerify: (token: string) => void;
@@ -31,83 +31,61 @@ declare global {
 export default function Turnstile({ onVerify, siteKey }: TurnstileProps) {
     const containerRef = useRef<HTMLDivElement>(null);
     const widgetIdRef = useRef<string | null>(null);
-    const isRenderingRef = useRef(false);
-    const [isScriptLoaded, setIsScriptLoaded] = useState(false);
+    const onVerifyRef = useRef(onVerify);
+    const isRenderedRef = useRef(false);
 
+    // Update the ref when onVerify changes, but don't trigger re-render
     useEffect(() => {
-        const checkScriptLoaded = () => {
-            if (typeof window !== 'undefined' && window.turnstile) {
-                setIsScriptLoaded(true);
-                return true;
-            }
-            return false;
-        };
+        onVerifyRef.current = onVerify;
+    }, [onVerify]);
 
-        if (checkScriptLoaded()) return;
+    const renderTurnstile = useCallback(() => {
+        if (!window.turnstile || !containerRef.current || isRenderedRef.current) return;
 
-        const interval = setInterval(() => {
-            if (checkScriptLoaded()) {
-                clearInterval(interval);
-            }
-        }, 100);
-
-        const timeout = setTimeout(() => {
-            clearInterval(interval);
-        }, 10000);
-
-        return () => {
-            clearInterval(interval);
-            clearTimeout(timeout);
-        };
-    }, []);
-
-    useEffect(() => {
-        if (!containerRef.current || !siteKey || !isScriptLoaded || isRenderingRef.current) return;
-
-        const renderTurnstile = () => {
-            if (!window.turnstile || !containerRef.current || isRenderingRef.current) return;
-
-            if (widgetIdRef.current) {
-                try {
-                    window.turnstile.remove(widgetIdRef.current);
-                } catch (e) {
-                    // Widget might not exist anymore
-                }
-                widgetIdRef.current = null;
-            }
-
-            isRenderingRef.current = true;
-
+        // Clear any existing widget first
+        if (widgetIdRef.current) {
             try {
-                widgetIdRef.current = window.turnstile.render(containerRef.current, {
-                    sitekey: siteKey,
-                    callback: (token: string) => {
-                        onVerify(token);
-                    },
-                    theme: "light",
-                    size: "normal",
-                });
-            } catch (error) {
-                console.error("Failed to render Turnstile:", error);
-            } finally {
-                isRenderingRef.current = false;
+                window.turnstile.remove(widgetIdRef.current);
+            } catch (e) {
+                // Ignore error if widget already removed
             }
-        };
+            widgetIdRef.current = null;
+        }
 
-        const timeoutId = setTimeout(renderTurnstile, 100);
+        isRenderedRef.current = true;
+        widgetIdRef.current = window.turnstile.render(containerRef.current, {
+            sitekey: siteKey,
+            callback: (token: string) => {
+                onVerifyRef.current(token);
+            },
+            theme: "light",
+        });
+    }, [siteKey]);
+
+    useEffect(() => {
+        if (!containerRef.current || !siteKey) return;
+
+        // Reset render state on mount
+        isRenderedRef.current = false;
+
+        if (window.turnstile) {
+            renderTurnstile();
+        } else {
+            window.onloadTurnstileCallback = renderTurnstile;
+        }
 
         return () => {
-            clearTimeout(timeoutId);
             if (widgetIdRef.current && window.turnstile) {
                 try {
                     window.turnstile.remove(widgetIdRef.current);
                 } catch (e) {
-                    // Ignore removal errors
+                    // Ignore error if widget already removed
                 }
                 widgetIdRef.current = null;
             }
+            isRenderedRef.current = false;
         };
-    }, [siteKey, onVerify, isScriptLoaded]);
+    }, [siteKey, renderTurnstile]);
 
-    return <div ref={containerRef} className="flex justify-center" />;
+    return <div ref={containerRef} />;
 }

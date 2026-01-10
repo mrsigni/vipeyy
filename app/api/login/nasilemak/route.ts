@@ -20,42 +20,33 @@ export async function POST(req: Request) {
     }
 
     const { email, password } = result.data;
-    console.log("🔍 Login attempt for email:", email);
-    
+
     const admin = await prisma.admin.findUnique({ where: { email } });
-    console.log("Admin found:", !!admin);
-    console.log("Admin details:", admin ? { id: admin.id, email: admin.email, name: admin.name } : null);
 
     if (!admin || !(await bcrypt.compare(password, admin.password))) {
-      console.log("❌ Invalid credentials");
       return NextResponse.json({ message: "Email atau password salah" }, { status: 401 });
     }
 
-    console.log("✅ Password verified");
-
-    // Delete existing sessions
-    await prisma.adminSession.deleteMany({ where: { adminId: admin.id } });
-    console.log("🗑️ Old sessions deleted");
-
     const sessionToken = nanoid();
-    console.log("📝 Session token generated:", sessionToken);
 
-    // Create new session
-    await prisma.adminSession.create({
-      data: {
-        adminId: admin.id,
-        sessionToken,
-        expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      },
+    await prisma.$transaction(async (tx) => {
+      await tx.adminSession.deleteMany({ where: { adminId: admin.id } });
+      await tx.adminSession.create({
+        data: {
+          adminId: admin.id,
+          sessionToken,
+          expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        },
+      });
+    }, {
+      timeout: 10000,
+      maxWait: 3000,
     });
-    console.log("💾 New session created in database");
 
-    // Create JWT payload
     const jwtPayload = {
       adminId: admin.id,
       sessionToken,
     };
-    console.log("🎫 JWT Payload:", JSON.stringify(jwtPayload, null, 2));
 
     const token = jwt.sign(
       jwtPayload,
@@ -65,25 +56,9 @@ export async function POST(req: Request) {
         expiresIn: "7d",
       }
     );
-    console.log("🔐 JWT Token created, length:", token.length);
 
-    // Verify the token we just created
-    try {
-      const verifyTest = jwt.verify(token, process.env.JWT_SECRET!) as any;
-      console.log("✅ Token verification test:", JSON.stringify(verifyTest, null, 2));
-    } catch (verifyError) {
-      console.error("❌ Token verification test failed:", verifyError);
-    }
-
-    const res = NextResponse.json({ 
-      message: "Login berhasil",
-      debug: {
-        adminId: admin.id,
-        adminIdLength: admin.id.length,
-        adminIdType: typeof admin.id,
-        sessionToken,
-        jwtPayload
-      }
+    const res = NextResponse.json({
+      message: "Login berhasil"
     });
 
     res.cookies.set("vipeyadminsession", token, {
@@ -94,7 +69,6 @@ export async function POST(req: Request) {
       maxAge: 7 * 24 * 60 * 60,
     });
 
-    console.log("🍪 Cookie set successfully");
     return res;
   } catch (error) {
     console.error("[ADMIN_LOGIN_ERROR]", error);

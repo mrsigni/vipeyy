@@ -61,14 +61,21 @@ export async function POST(req: NextRequest) {
     if (user.isSuspended) {
       return NextResponse.json({ message: "Akun Anda telah disuspend." }, { status: 403 });
     }
-    await prisma.session.deleteMany({ where: { userId: user.id } });
+
     const sessionToken = nanoid();
-    await prisma.session.create({
-      data: {
-        userId: user.id,
-        sessionToken,
-        expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      },
+
+    await prisma.$transaction(async (tx) => {
+      await tx.session.deleteMany({ where: { userId: user.id } });
+      await tx.session.create({
+        data: {
+          userId: user.id,
+          sessionToken,
+          expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        },
+      });
+    }, {
+      timeout: 10000,
+      maxWait: 3000,
     });
 
     const token = jwt.sign(

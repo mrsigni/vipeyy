@@ -99,25 +99,32 @@ export async function POST(req: NextRequest) {
     const username = await generateUniqueUsername(fullName);
     const hashed = await bcrypt.hash(password, 10);
 
-    const newUser = await prisma.user.create({
-      data: {
-        fullName,
-        email,
-        whatsapp,
-        username,
-        password: hashed,
-      },
-    });
-
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const expiresAt = addMinutes(new Date(), 10);
 
-    await prisma.emailVerificationToken.create({
-      data: {
-        userId: newUser.id,
-        token: otp,
-        expiresAt,
-      },
+    const newUser = await prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          fullName,
+          email,
+          whatsapp,
+          username,
+          password: hashed,
+        },
+      });
+
+      await tx.emailVerificationToken.create({
+        data: {
+          userId: user.id,
+          token: otp,
+          expiresAt,
+        },
+      });
+
+      return user;
+    }, {
+      timeout: 10000,
+      maxWait: 3000,
     });
 
     await transporter.sendMail({

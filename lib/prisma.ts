@@ -1,21 +1,14 @@
-import { PrismaClient } from '@prisma/client'
-import { PrismaTiDBCloud } from '@tidbcloud/prisma-adapter'
-import { connect } from '@tidbcloud/serverless'
+import { PrismaClient } from "@prisma/client";
+import { PrismaTiDBCloud } from "@tidbcloud/prisma-adapter";
 
-// Pastikan ada fallback string kosong agar build tidak error saat ENV belum load
-const connectionString = process.env.DATABASE_URL || ''
+const globalForPrisma = globalThis as unknown as {
+  prisma: PrismaClient | undefined;
+};
 
-const globalForPrisma = globalThis as unknown as { prisma: PrismaClient }
+const adapter = new PrismaTiDBCloud({ url: process.env.DATABASE_URL! });
 
-// FIX: Tambahkan "as any" di dalam kurung connection
-const connection = connect({ url: connectionString })
-const adapter = new PrismaTiDBCloud(connection as any) 
+export const prisma = globalForPrisma.prisma ?? new PrismaClient({ adapter });
 
-export const prisma =
-  globalForPrisma.prisma ||
-  new PrismaClient({
-    adapter,
-    log: ['error'],
-  })
-
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
+if (process.env.NODE_ENV !== "production") {
+  globalForPrisma.prisma = prisma;
+}

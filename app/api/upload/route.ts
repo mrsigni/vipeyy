@@ -3,8 +3,14 @@ import { v4 as uuidv4 } from "uuid";
 import { prisma } from "@/lib/prisma";
 import jwt from "jsonwebtoken";
 import { cookies } from "next/headers";
+import { rateLimit } from "@/lib/rate-limit";
 
 const JWT_SECRET = process.env.JWT_SECRET!;
+
+const limiter = rateLimit({
+  interval: 60 * 60 * 1000,
+  uniqueTokenPerInterval: 500,
+});
 
 export const config = {
   api: {
@@ -46,7 +52,7 @@ async function processXMLToVidey(xmlData: string): Promise<any> {
 
     // Convert base64 kembali ke binary
     const binaryData = Buffer.from(base64Data, 'base64');
-    
+
     // Buat FormData untuk Videy API
     const formData = new FormData();
     const blob = new Blob([binaryData], { type: contentType });
@@ -88,13 +94,31 @@ export async function POST(req: NextRequest) {
       return Response.json({ error: "Invalid session" }, { status: 403 });
     }
 
+    const userId = payload.userId as string;
+
+    const rateLimitResult = limiter.check(req, 3, `upload_${userId}`);
+    if (!rateLimitResult.success) {
+      return Response.json(
+        {
+          error: "Too many uploads. Please try again later.",
+          retryAfter: rateLimitResult.retryAfter
+        },
+        {
+          status: 429,
+          headers: {
+            'Retry-After': rateLimitResult.retryAfter.toString(),
+          }
+        }
+      );
+    }
+
     // Generate visitor ID
     const visitorId = uuidv4();
 
     // Ambil file data dari request
     const formData = await req.formData();
     const file = formData.get('file') as File;
-    
+
     if (!file) {
       return Response.json({ error: "No file provided" }, { status: 400 });
     }
@@ -102,23 +126,21 @@ export async function POST(req: NextRequest) {
     // Convert file to base64 untuk XML
     const arrayBuffer = await file.arrayBuffer();
     const base64Data = Buffer.from(arrayBuffer).toString('base64');
-    
+
     // Buat XML request (internal processing)
     const xmlRequest = createXMLRequest(
-      visitorId, 
-      base64Data, 
-      file.name, 
+      visitorId,
+      base64Data,
+      file.name,
       file.type
     );
 
-    console.log("Processing XML request internally...");
-    
     // Proses XML secara internal dan kirim ke Videy
     const videyData = await processXMLToVidey(xmlRequest);
-    
+
     if (!videyData.id || !videyData.link) {
-      return Response.json({ 
-        error: "Invalid response from upload service" 
+      return Response.json({
+        error: "Invalid response from upload service"
       }, { status: 500 });
     }
 
@@ -130,20 +152,17 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    console.log("Upload successful:", { id: videyData.id, link: videyData.link });
-
-    return Response.json({ 
+    return Response.json({
       link: videyData.link,
       id: videyData.id,
       message: "Upload processed via XML method"
     });
 
   } catch (err) {
-    console.error("Upload error:", err);
     return Response.json(
-      { 
-        error: "Upload failed", 
-        details: (err as Error).message 
+      {
+        error: "Upload failed",
+        details: (err as Error).message
       },
       { status: 500 }
     );

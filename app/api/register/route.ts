@@ -1,10 +1,11 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { transporter } from "@/lib/mailer";
 import { randomBytes } from "crypto";
 import { addMinutes } from "date-fns";
+import { rateLimit, getClientIp } from "@/lib/rate-limit";
 
 const registerSchema = z
   .object({
@@ -46,8 +47,34 @@ async function generateUniqueUsername(name: string): Promise<string> {
   return username;
 }
 
-export async function POST(req: Request) {
+const limiter = rateLimit({
+  interval: 15 * 60 * 1000,
+  uniqueTokenPerInterval: 500,
+});
+
+export async function POST(req: NextRequest) {
   try {
+    const ip = getClientIp(req);
+    const rateLimitResult = limiter.check(req, 3, `register_${ip}`);
+
+    if (!rateLimitResult.success) {
+      return NextResponse.json(
+        {
+          message: `Terlalu banyak percobaan registrasi. Silakan coba lagi dalam ${rateLimitResult.retryAfter} detik.`,
+          retryAfter: rateLimitResult.retryAfter
+        },
+        {
+          status: 429,
+          headers: {
+            'X-RateLimit-Limit': '3',
+            'X-RateLimit-Remaining': '0',
+            'X-RateLimit-Reset': new Date(rateLimitResult.reset).toISOString(),
+            'Retry-After': rateLimitResult.retryAfter.toString(),
+          }
+        }
+      );
+    }
+
     const body = await req.json();
     const result = registerSchema.safeParse(body);
 
@@ -105,9 +132,18 @@ export async function POST(req: Request) {
       `,
     });
 
-    return NextResponse.json({
-      message: "Registrasi berhasil. OTP telah dikirim ke email Anda.",
-    });
+    return NextResponse.json(
+      {
+        message: "Registrasi berhasil. OTP telah dikirim ke email Anda.",
+      },
+      {
+        headers: {
+          'X-RateLimit-Limit': '3',
+          'X-RateLimit-Remaining': rateLimitResult.remaining.toString(),
+          'X-RateLimit-Reset': new Date(rateLimitResult.reset).toISOString(),
+        }
+      }
+    );
   } catch (err) {
     if (process.env.NODE_ENV !== "production") {
       console.error("Register error:", err);

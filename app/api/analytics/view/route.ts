@@ -1,5 +1,12 @@
 import { prisma } from '@/lib/prisma'
 import { NextRequest } from 'next/server'
+import { rateLimit } from '@/lib/rate-limit'
+import { viewTrackingSchema } from '@/lib/validation'
+
+const limiter = rateLimit({
+  interval: 60 * 1000,
+  uniqueTokenPerInterval: 1000,
+});
 
 async function getClientIP(req: NextRequest): Promise<string> {
   const xff = req.headers.get('x-forwarded-for')
@@ -19,10 +26,32 @@ async function getCountryCode(ip: string): Promise<string | null> {
 
 export async function POST(req: NextRequest) {
   try {
-    const { videoId } = await req.json()
-    if (!videoId || typeof videoId !== 'string') {
-      return new Response(JSON.stringify({ error: 'Missing videoId' }), { status: 400 })
+    const ip = await getClientIP(req);
+
+    const rateLimitResult = limiter.check(req, 10, `view_${ip}`);
+    if (!rateLimitResult.success) {
+      return new Response(
+        JSON.stringify({
+          error: 'Too many requests',
+          retryAfter: rateLimitResult.retryAfter
+        }),
+        {
+          status: 429,
+          headers: {
+            'Retry-After': rateLimitResult.retryAfter.toString(),
+          }
+        }
+      );
     }
+
+    const body = await req.json();
+    const result = viewTrackingSchema.safeParse(body);
+
+    if (!result.success) {
+      return new Response(JSON.stringify({ error: 'Invalid input', details: result.error.format() }), { status: 400 });
+    }
+
+    const { videoId } = result.data;
 
     const video = await prisma.video.findUnique({
       where: { videoId },
@@ -36,7 +65,6 @@ export async function POST(req: NextRequest) {
       return new Response(JSON.stringify({ error: 'Video not found' }), { status: 404 })
     }
 
-    const ip = await getClientIP(req)
     const userAgent = req.headers.get('user-agent') || 'unknown'
     const country = await getCountryCode(ip)
 
@@ -55,53 +83,57 @@ export async function POST(req: NextRequest) {
       return new Response(JSON.stringify({ success: false, message: 'Already viewed today' }), { status: 200 })
     }
 
-    await prisma.videoView.create({
-      data: {
-        videoId: video.id,
-        ip,
-        userAgent,
-        country,
-        isValid: true,
-      },
-    })
+    await prisma.$transaction(async (tx) => {
+      await tx.videoView.create({
+        data: {
+          videoId: video.id,
+          ip,
+          userAgent,
+          country,
+          isValid: true,
+        },
+      })
 
-    await prisma.video.update({
-      where: { id: video.id },
-      data: {
-        totalViews: { increment: 1 },
-        lastViewedAt: new Date(),
-      },
-    })
-
-    const settings = await prisma.webSettings.findUnique({
-      where: { id: 1 },
-      select: { cpm: true },
-    })
-
-    if (settings?.cpm && video.userId) {
-      const earning = settings.cpm / 1000
-
-      await prisma.video.update({
+      await tx.video.update({
         where: { id: video.id },
         data: {
-          earnings: { increment: earning },
+          totalViews: { increment: 1 },
+          lastViewedAt: new Date(),
         },
       })
 
-      await prisma.user.update({
-        where: { id: video.userId },
-        data: {
-          totalEarnings: { increment: earning },
-        },
+      const settings = await tx.webSettings.findUnique({
+        where: { id: 1 },
+        select: { cpm: true },
       })
-    }
+
+      if (settings?.cpm && video.userId) {
+        const earning = settings.cpm / 1000
+
+        await tx.video.update({
+          where: { id: video.id },
+          data: {
+            earnings: { increment: earning },
+          },
+        })
+
+        await tx.user.update({
+          where: { id: video.userId },
+          data: {
+            totalEarnings: { increment: earning },
+          },
+        })
+      }
+    }, {
+      timeout: 30000,
+      maxWait: 5000,
+    })
 
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     })
   } catch (err) {
-    console.error('Error processing view:', err)
     return new Response(JSON.stringify({ error: 'Internal server error' }), {
       status: 500,
     })

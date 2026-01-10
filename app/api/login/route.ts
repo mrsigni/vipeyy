@@ -1,17 +1,44 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { prisma } from "@/lib/prisma";
 import { nanoid } from "nanoid";
+import { rateLimit, getClientIp } from "@/lib/rate-limit";
 
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
 });
 
-export async function POST(req: Request) {
+const limiter = rateLimit({
+  interval: 10 * 60 * 1000,
+  uniqueTokenPerInterval: 500,
+});
+
+export async function POST(req: NextRequest) {
   try {
+    const ip = getClientIp(req);
+    const rateLimitResult = limiter.check(req, 5, `login_${ip}`);
+
+    if (!rateLimitResult.success) {
+      return NextResponse.json(
+        {
+          message: `Terlalu banyak percobaan login. Silakan coba lagi dalam ${rateLimitResult.retryAfter} detik.`,
+          retryAfter: rateLimitResult.retryAfter
+        },
+        {
+          status: 429,
+          headers: {
+            'X-RateLimit-Limit': '5',
+            'X-RateLimit-Remaining': '0',
+            'X-RateLimit-Reset': new Date(rateLimitResult.reset).toISOString(),
+            'Retry-After': rateLimitResult.retryAfter.toString(),
+          }
+        }
+      );
+    }
+
     const body = await req.json();
     const result = loginSchema.safeParse(body);
 
@@ -65,6 +92,10 @@ export async function POST(req: Request) {
       path: "/",
       maxAge: 7 * 24 * 60 * 60,
     });
+
+    res.headers.set('X-RateLimit-Limit', '5');
+    res.headers.set('X-RateLimit-Remaining', rateLimitResult.remaining.toString());
+    res.headers.set('X-RateLimit-Reset', new Date(rateLimitResult.reset).toISOString());
 
     return res;
   } catch {

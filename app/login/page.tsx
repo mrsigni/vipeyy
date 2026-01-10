@@ -4,6 +4,8 @@ import { useState } from "react";
 import { Eye, EyeOff, Loader } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { z } from "zod";
+import Script from "next/script";
+import Turnstile from "@/components/common/Turnstile";
 
 const loginSchema = z.object({
   email: z
@@ -20,9 +22,20 @@ export default function LoginPage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
 
+  const turnstileSiteKey = process.env.NEXT_PUBLIC_CLOUDFLARE_TURNSTILE_SITE_KEY || "";
+  const shouldUseTurnstile = process.env.NEXT_PUBLIC_TURNSTILE === "true";
+  const [isTurnstileVerified, setIsTurnstileVerified] = useState(!shouldUseTurnstile);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrors({});
+
+    if (shouldUseTurnstile && !isTurnstileVerified) {
+      toast.error("Silakan verifikasi Turnstile terlebih dahulu");
+      return;
+    }
+
     setLoading(true);
 
     const result = loginSchema.safeParse({ email, password });
@@ -42,7 +55,11 @@ export default function LoginPage() {
       const res = await fetch("/api/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({
+          email,
+          password,
+          turnstileToken: shouldUseTurnstile ? turnstileToken : undefined,
+        }),
       });
 
       const data = await res.json();
@@ -116,9 +133,8 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="Email"
-                className={`w-full px-4 py-2 border rounded ${
-                  errors.email ? "border-red-500" : ""
-                }`}
+                className={`w-full px-4 py-2 border rounded ${errors.email ? "border-red-500" : ""
+                  }`}
               />
               {errors.email && (
                 <p className="text-sm text-red-600 mt-1">{errors.email}</p>
@@ -132,9 +148,8 @@ export default function LoginPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Password"
-                  className={`w-full h-full px-4 pr-10 text-sm border rounded ${
-                    errors.password ? "border-red-500" : ""
-                  }`}
+                  className={`w-full h-full px-4 pr-10 text-sm border rounded ${errors.password ? "border-red-500" : ""
+                    }`}
                 />
                 <button
                   type="button"
@@ -150,10 +165,44 @@ export default function LoginPage() {
               )}
             </div>
 
+            {shouldUseTurnstile && (
+              <div className="mb-4 flex justify-center">
+                <Turnstile
+                  siteKey={turnstileSiteKey}
+                  onVerify={async (token) => {
+                    setTurnstileToken(token);
+                    setIsTurnstileVerified(true);
+
+                    try {
+                      const response = await fetch("/api/turnstile/verify", {
+                        method: "POST",
+                        headers: {
+                          "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify({ token }),
+                      });
+
+                      const data = await response.json();
+
+                      if (!data.success) {
+                        console.error("Turnstile verification failed:", data.error);
+                        setIsTurnstileVerified(false);
+                        setTurnstileToken(null);
+                      }
+                    } catch (error) {
+                      console.error("Verification error:", error);
+                      setIsTurnstileVerified(false);
+                      setTurnstileToken(null);
+                    }
+                  }}
+                />
+              </div>
+            )}
+
             <button
               type="submit"
-              disabled={loading}
-              className="bg-black text-white font-medium w-full py-2 rounded-full hover:opacity-90 transition flex items-center justify-center gap-2"
+              disabled={loading || (shouldUseTurnstile && !isTurnstileVerified)}
+              className="bg-black text-white font-medium w-full py-2 rounded-full hover:opacity-90 transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? <Loader className="w-4 h-4 animate-spin" /> : "Login"}
             </button>
@@ -189,6 +238,16 @@ export default function LoginPage() {
           </nav>
         </footer>
       </main>
+
+      {shouldUseTurnstile && (
+        <Script
+          id="turnstile-script"
+          src="https://challenges.cloudflare.com/turnstile/v0/api.js"
+          strategy="afterInteractive"
+          async
+          defer
+        />
+      )}
     </>
   );
 }

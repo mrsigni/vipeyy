@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
+import Script from "next/script";
 import {
   Play,
   Pause,
@@ -22,7 +23,6 @@ import {
   ThumbsUp,
   ThumbsDown,
 } from "lucide-react";
-import Script from "next/script";
 import Turnstile from "@/components/common/Turnstile";
 
 type RelatedVideo = {
@@ -39,7 +39,6 @@ export default function ModernVideoPlayer() {
   const id = searchParams.get("id");
   const [mounted, setMounted] = useState(false);
 
-  // Video state
   const [videoUrl, setVideoUrl] = useState("");
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -49,7 +48,6 @@ export default function ModernVideoPlayer() {
   const [buffered, setBuffered] = useState(0);
   const [isBuffering, setIsBuffering] = useState(false);
 
-  // UI state
   const [showControls, setShowControls] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showVolumeSlider, setShowVolumeSlider] = useState(false);
@@ -57,7 +55,6 @@ export default function ModernVideoPlayer() {
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [isPictureInPicture, setIsPictureInPicture] = useState(false);
 
-  // Video metadata
   const [videoTitle, setVideoTitle] = useState<string | null>(null);
   const [videoRatio, setVideoRatio] = useState<"landscape" | "portrait">("landscape");
   const [videoError, setVideoError] = useState(false);
@@ -65,78 +62,29 @@ export default function ModernVideoPlayer() {
   const [viewCount, setViewCount] = useState<number | null>(null);
   const [hasTrackedView, setHasTrackedView] = useState(false);
 
-  // Likes/Dislikes state
   const [totalLikes, setTotalLikes] = useState(0);
   const [totalDislikes, setTotalDislikes] = useState(0);
   const [userReaction, setUserReaction] = useState<'like' | 'dislike' | null>(null);
   const [isReactionLoading, setIsReactionLoading] = useState(false);
 
-  // Related videos state
   const [relatedVideos, setRelatedVideos] = useState<RelatedVideo[]>([]);
   const [loadingRelated, setLoadingRelated] = useState(true);
 
-  // Share & copy state
   const [currentUrl, setCurrentUrl] = useState("");
   const [copied, setCopied] = useState(false);
 
-  // Mobile detection
   const [isMobile, setIsMobile] = useState(false);
 
-  // Turnstile verification (controlled by env var)
   const turnstileSiteKey = process.env.NEXT_PUBLIC_CLOUDFLARE_TURNSTILE_SITE_KEY || "";
   const shouldUseTurnstile = process.env.NEXT_PUBLIC_TURNSTILE === "true";
   const [isTurnstileVerified, setIsTurnstileVerified] = useState(!shouldUseTurnstile);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
-  const [isVerifying, setIsVerifying] = useState(false);
-  const [verifyError, setVerifyError] = useState<string | null>(null);
 
-  // Refs
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const progressRef = useRef<HTMLDivElement>(null);
 
-  // === Anti-Adblock callback ===
-  const handleAntiAdblock = useCallback(() => {
-    if (typeof window !== "undefined" && (window as any).uaayeyjg) {
-      try {
-        (window as any).uaayeyjg(15);
-      } catch (error) {
-        console.error("uaayeyjg error:", error);
-      }
-    }
-  }, []);
-
-  // === Custom Popunder Handler ===
-  const [popunderTriggered, setPopunderTriggered] = useState(false);
-
-  const triggerPopunder = useCallback(() => {
-    if (popunderTriggered || !isTurnstileVerified) return;
-
-    setPopunderTriggered(true);
-
-    // Popunder URL (ganti dengan URL iklan kamu)
-    const popunderUrl = "https://otieu.com/4/10367653";
-
-    try {
-      // 1. Buka tab baru dengan popunder
-      const newTab = window.open(popunderUrl, "_blank");
-
-      // 2. Tab lama juga redirect ke popunder setelah delay kecil
-      setTimeout(() => {
-        window.open(popunderUrl, "_blank");
-      }, 100);
-
-      // Optional: Focus kembali ke current tab (agar tab lama terlihat seperti "stay")
-      if (newTab) {
-        window.focus();
-      }
-    } catch (error) {
-      console.error("Popunder error:", error);
-    }
-  }, [popunderTriggered, isTurnstileVerified]);
-
-  // Initialize
   useEffect(() => {
     setMounted(true);
     const checkMobile = () => {
@@ -144,10 +92,21 @@ export default function ModernVideoPlayer() {
     };
     checkMobile();
     window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
-  }, []);
 
-  // Set up video URL and current URL
+    if (shouldUseTurnstile && typeof window !== 'undefined') {
+      const existingScript = document.getElementById('turnstile-script');
+      if (!existingScript) {
+        const script = document.createElement('script');
+        script.id = 'turnstile-script';
+        script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js';
+        script.async = true;
+        document.head.appendChild(script);
+      }
+    }
+
+    return () => window.removeEventListener('resize', checkMobile);
+  }, [shouldUseTurnstile]);
+
   useEffect(() => {
     if (id && typeof window !== "undefined") {
       setVideoUrl(`https://cdn.videy.co/${id}.mp4`);
@@ -155,25 +114,9 @@ export default function ModernVideoPlayer() {
     }
   }, [id]);
 
-  // Attach popunder click listener
-  useEffect(() => {
-    if (!isTurnstileVerified || popunderTriggered) return;
-
-    const handleClick = () => {
-      triggerPopunder();
-    };
-
-    // Attach to document for any click
-    document.addEventListener("click", handleClick, { once: true });
-
-    return () => {
-      document.removeEventListener("click", handleClick);
-    };
-  }, [isTurnstileVerified, popunderTriggered, triggerPopunder]);
-
-  // Fetch all video data (title, views, likes, dislikes)
   useEffect(() => {
     if (!id) return;
+    if (shouldUseTurnstile && !isTurnstileVerified) return;
 
     const fetchVideoDetails = async () => {
       try {
@@ -208,11 +151,12 @@ export default function ModernVideoPlayer() {
 
     fetchVideoDetails();
     fetchUserReaction();
-  }, [id]);
+  }, [id, isTurnstileVerified, shouldUseTurnstile]);
 
-  // Fetch related videos
   useEffect(() => {
     if (!id) return;
+    if (shouldUseTurnstile && !isTurnstileVerified) return;
+
     fetch(`/api/video/related?videoId=${id}&limit=12`)
       .then((res) => res.json())
       .then((data) => {
@@ -220,9 +164,8 @@ export default function ModernVideoPlayer() {
       })
       .catch((err) => console.error("Failed to fetch related videos:", err))
       .finally(() => setLoadingRelated(false));
-  }, [id]);
+  }, [id, isTurnstileVerified, shouldUseTurnstile]);
 
-  // Handle like/dislike action
   const handleReaction = async (isLike: boolean) => {
     if (!id || isReactionLoading) return;
 
@@ -261,7 +204,6 @@ export default function ModernVideoPlayer() {
     }
   };
 
-  // Picture-in-Picture event listeners
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !isLoaded) return;
@@ -289,7 +231,6 @@ export default function ModernVideoPlayer() {
     };
   }, [isLoaded]);
 
-  // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
@@ -348,14 +289,12 @@ export default function ModernVideoPlayer() {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  // Disable right-click
   useEffect(() => {
     const handleRightClick = (e: MouseEvent) => e.preventDefault();
     document.addEventListener("contextmenu", handleRightClick);
     return () => document.removeEventListener("contextmenu", handleRightClick);
   }, []);
 
-  // Auto-hide controls
   const showControlsTemporarily = useCallback(() => {
     setShowControls(true);
     if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
@@ -364,7 +303,6 @@ export default function ModernVideoPlayer() {
     }
   }, [isPlaying]);
 
-  // Video event handlers
   const handleLoadedMetadata = () => {
     if (!videoRef.current) return;
 
@@ -405,12 +343,10 @@ export default function ModernVideoPlayer() {
     setIsMuted(v.muted);
   };
 
-  // Controls
   const togglePlay = async () => {
     const v = videoRef.current;
     if (!v || videoError) return;
 
-    // Block play if Turnstile not verified when enabled
     if (shouldUseTurnstile && !isTurnstileVerified) {
       return;
     }
@@ -588,15 +524,12 @@ export default function ModernVideoPlayer() {
     return `${y} ${y === 1 ? "year" : "years"} ago`;
   };
 
-  // Get video container classes based on device and video orientation
   const getVideoContainerClasses = () => {
     const baseClasses = "relative bg-black overflow-hidden shadow-2xl group";
 
     if (!isMobile) {
-      // PC: Always landscape, always with rounded corners
       return `${baseClasses} rounded-xl aspect-video`;
     } else {
-      // Mobile: Responsive based on video orientation
       if (videoRatio === "portrait") {
         return `${baseClasses} rounded-none w-full h-screen fixed top-0 left-0 right-0 bottom-0 z-[60]`;
       } else {
@@ -605,7 +538,6 @@ export default function ModernVideoPlayer() {
     }
   };
 
-  // Get main content classes
   const getMainContentClasses = () => {
     if (isMobile && videoRatio === "portrait") {
       return "fixed inset-0 z-[60] bg-black flex items-center justify-center";
@@ -623,6 +555,44 @@ export default function ModernVideoPlayer() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {mounted && (
+        <>
+          <Script
+            id="adstera-popunder"
+            src="https://eldestceramiccash.com/6a/b3/43/6ab343c9e192ad80a90f50ed73c5801f.js"
+            strategy="afterInteractive"
+          />
+
+          <Script
+            id="hiltopads-popunder"
+            strategy="afterInteractive"
+            dangerouslySetInnerHTML={{
+              __html: `
+                (function(poi){
+                  var d = document,
+                      s = d.createElement('script'),
+                      l = d.scripts[d.scripts.length - 1];
+                  s.settings = poi || {};
+                  s.src = "//loosebelt.com/c.Di9j6lbu2R5flXSmWWQX9YNmjGclwnM/DrAXwAOUCT0/2VN/zcAUwVMWDWAK5g";
+                  s.async = true;
+                  s.referrerPolicy = 'no-referrer-when-downgrade';
+                  l.parentNode.insertBefore(s, l);
+                })({})
+              `
+            }}
+          />
+
+          <Script
+            id="clickadu-popunder"
+            async
+            data-cfasync="false"
+            data-clocid="2076892"
+            src="//astronautlividlyreformer.com/on.js"
+            strategy="afterInteractive"
+          />
+        </>
+      )}
+
       {!(isMobile && videoRatio === "portrait") && (
         <header className="fixed top-0 left-0 w-full z-50 bg-white shadow-sm border-b">
           <div className="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
@@ -992,7 +962,6 @@ export default function ModernVideoPlayer() {
                           </div>
                         )}
                         <div className="flex items-center space-x-6">
-                          {/* Like Button */}
                           <button
                             onClick={() => handleReaction(true)}
                             disabled={isReactionLoading}
@@ -1006,7 +975,6 @@ export default function ModernVideoPlayer() {
                             <span className="font-medium">{formatViewCount(totalLikes)}</span>
                           </button>
 
-                          {/* Dislike Button */}
                           <button
                             onClick={() => handleReaction(false)}
                             disabled={isReactionLoading}
@@ -1020,7 +988,6 @@ export default function ModernVideoPlayer() {
                             <span className="font-medium">{formatViewCount(totalDislikes)}</span>
                           </button>
 
-                          {/* Share Button */}
                           <button onClick={copyUrl} className="flex items-center space-x-1 hover:text-gray-900 transition-colors">
                             {copied ? <Check className="w-4 h-4" /> : <Share className="w-4 h-4" />}
                             <span>{copied ? "Copied!" : "Share"}</span>
@@ -1081,7 +1048,6 @@ export default function ModernVideoPlayer() {
                     />
                   </div>
                 </section>
-
 
                 <div className="bg-white rounded-xl p-6 shadow-sm">
                   <h3 className="text-lg font-bold mb-4">Related Videos</h3>
@@ -1163,68 +1129,7 @@ export default function ModernVideoPlayer() {
 
         {mounted && (
           <>
-            {/* Cloudflare Turnstile Script (when enabled) */}
-            {shouldUseTurnstile && (
-              <Script
-                id="turnstile-script"
-                src="https://challenges.cloudflare.com/turnstile/v0/api.js"
-                strategy="afterInteractive"
-                async
-                defer
-              />
-            )}
-
-            {/* All ad scripts - Only load after Turnstile verified */}
-            {(!shouldUseTurnstile || isTurnstileVerified) && (
-              <>
-                {/* === Anti-Adblock INLINE, lewat file public === */}
-                <Script
-                  id="anti-adblock-inline-2076892"
-                  strategy="afterInteractive"
-                  src="/anti-adblock-2076892.js"
-                />
-
-                {/* === Anti-Adblock EXTERNAL on.js === */}
-                <Script
-                  id="anti-adblock-external-2076892"
-                  strategy="afterInteractive"
-                  src="//renamereptiliantrance.com/on.js"
-                  data-cfasync="false"
-                  data-clocid="2076892"
-                  onLoad={handleAntiAdblock}
-                  onError={handleAntiAdblock}
-                />
-
-                {/* Popunder scripts */}
-                <Script
-                  id="popunder-script"
-                  strategy="afterInteractive"
-                  src="//eldestceramiccash.com/6a/b3/43/6ab343c9e192ad80a90f50ed73c5801f.js"
-                />
-
-                <Script
-                  id="loosebelt-popunder-script2"
-                  strategy="afterInteractive"
-                  dangerouslySetInnerHTML={{
-                    __html: `(function(aeoq){
-        var d = document,
-            s = d.createElement('script'),
-            l = d.scripts[d.scripts.length - 1];
-        s.settings = aeoq || {};
-        s.src = "\/\/loosebelt.com\/c.D\/9\/6Obh2H5plZSEWmQd9aN\/jkcRwLMrDcAiwjOmCE0B2-N\/z_AlwOMzD\/Al5b";
-        s.async = true;
-        s.referrerPolicy = 'no-referrer-when-downgrade';
-        l.parentNode.insertBefore(s, l);
-        })({})`
-                  }}
-                />
-              </>
-            )}
           </>
-
-
-
-
         )}
 
         {!(isMobile && videoRatio === "portrait") && (
@@ -1257,7 +1162,6 @@ export default function ModernVideoPlayer() {
           </div>
         )}
 
-        {/* Histats hidden counter */}
         <div
           aria-hidden="true"
           style={{
@@ -1282,7 +1186,6 @@ export default function ModernVideoPlayer() {
         </div>
       </main>
 
-      {/* Cloudflare Turnstile verification overlay (when enabled) */}
       {shouldUseTurnstile && !isTurnstileVerified && (
         <div
           className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-90 z-[9999]"
@@ -1302,11 +1205,9 @@ export default function ModernVideoPlayer() {
           <Turnstile
             siteKey={turnstileSiteKey}
             onVerify={async (token) => {
-              // Immediately hide overlay and allow user to watch
               setTurnstileToken(token);
               setIsTurnstileVerified(true);
 
-              // Verify in background (non-blocking)
               try {
                 const response = await fetch("/api/turnstile/verify", {
                   method: "POST",
@@ -1320,11 +1221,9 @@ export default function ModernVideoPlayer() {
 
                 if (!data.success) {
                   console.error("Turnstile verification failed:", data.error);
-                  // Token invalid, but we already let them watch - backend will handle security
                 }
               } catch (error) {
                 console.error("Verification error:", error);
-                // Continue anyway, backend can double-check if needed
               }
             }}
           />

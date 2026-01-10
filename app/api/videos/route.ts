@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { rateLimit } from "@/lib/rate-limit";
+import { videoCreateSchema } from "@/lib/validation";
+
+const limiter = rateLimit({
+  interval: 60 * 60 * 1000,
+  uniqueTokenPerInterval: 500,
+});
 
 // ✅ GET Videos (List semua video / filter folder)
 export async function GET(request: NextRequest) {
@@ -17,7 +24,7 @@ export async function GET(request: NextRequest) {
     const skip = (page - 1) * take;
 
     const where: Record<string, any> = { userId };
-    
+
     // Logic filter folder
     if (folderId && folderId !== "null" && folderId !== "") {
       where.folderId = folderId;
@@ -54,7 +61,6 @@ export async function GET(request: NextRequest) {
       total,
     });
   } catch (error) {
-    console.error("Error fetching videos:", error);
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
@@ -70,7 +76,32 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const rateLimitResult = limiter.check(request, 20, `create_video_${userId}`);
+    if (!rateLimitResult.success) {
+      return NextResponse.json(
+        {
+          error: "Too many video creations. Please try again later.",
+          retryAfter: rateLimitResult.retryAfter
+        },
+        {
+          status: 429,
+          headers: {
+            'Retry-After': rateLimitResult.retryAfter.toString(),
+          }
+        }
+      );
+    }
+
     const body = await request.json();
+    const result = videoCreateSchema.safeParse(body);
+
+    if (!result.success) {
+      return NextResponse.json(
+        { error: "Invalid request body", details: result.error.flatten() },
+        { status: 400 }
+      );
+    }
+
     const {
       videoId,
       title,
@@ -81,11 +112,7 @@ export async function POST(request: NextRequest) {
       fileSize,
       mimeType,
       isPublic,
-    } = body;
-
-    if (!videoId || typeof videoId !== "string" || videoId.trim().length === 0) {
-      return NextResponse.json({ error: "Video ID is required" }, { status: 400 });
-    }
+    } = result.data;
 
     const existingVideo = await prisma.video.findUnique({
       where: { videoId: videoId.trim() },
@@ -138,9 +165,6 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(video, { status: 201 });
   } catch (error) {
-    console.error("Error creating video:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
-  } finally {
-    await prisma.$disconnect();
   }
 }

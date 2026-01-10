@@ -207,12 +207,7 @@ export default function LoginPage() {
               {loading ? <Loader className="w-4 h-4 animate-spin" /> : "Login"}
             </button>
 
-            <p className="text-xs text-gray-500 mt-4">
-              Belum punya akun?{" "}
-              <a href="/register" className="underline">
-                Daftar di sini
-              </a>
-            </p>
+          
           </form>
         </div>
         <footer

@@ -31,8 +31,8 @@ declare global {
 export default function Turnstile({ onVerify, siteKey }: TurnstileProps) {
     const containerRef = useRef<HTMLDivElement>(null);
     const widgetIdRef = useRef<string | null>(null);
+    const isRenderingRef = useRef(false);
     const [isScriptLoaded, setIsScriptLoaded] = useState(false);
-    const [isRendering, setIsRendering] = useState(false);
 
     useEffect(() => {
         const checkScriptLoaded = () => {
@@ -62,10 +62,10 @@ export default function Turnstile({ onVerify, siteKey }: TurnstileProps) {
     }, []);
 
     useEffect(() => {
-        if (!containerRef.current || !siteKey || !isScriptLoaded || isRendering) return;
+        if (!containerRef.current || !siteKey || !isScriptLoaded || isRenderingRef.current) return;
 
         const renderTurnstile = () => {
-            if (!window.turnstile || !containerRef.current) return;
+            if (!window.turnstile || !containerRef.current || isRenderingRef.current) return;
 
             if (widgetIdRef.current) {
                 try {
@@ -76,7 +76,7 @@ export default function Turnstile({ onVerify, siteKey }: TurnstileProps) {
                 widgetIdRef.current = null;
             }
 
-            setIsRendering(true);
+            isRenderingRef.current = true;
 
             try {
                 widgetIdRef.current = window.turnstile.render(containerRef.current, {
@@ -90,7 +90,7 @@ export default function Turnstile({ onVerify, siteKey }: TurnstileProps) {
             } catch (error) {
                 console.error("Failed to render Turnstile:", error);
             } finally {
-                setIsRendering(false);
+                isRenderingRef.current = false;
             }
         };
 
@@ -107,7 +107,7 @@ export default function Turnstile({ onVerify, siteKey }: TurnstileProps) {
                 widgetIdRef.current = null;
             }
         };
-    }, [siteKey, onVerify, isScriptLoaded, isRendering]);
+    }, [siteKey, onVerify, isScriptLoaded]);
 
     return <div ref={containerRef} className="flex justify-center" />;
 }

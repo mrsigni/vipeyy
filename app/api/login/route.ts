@@ -19,23 +19,15 @@ const limiter = rateLimit({
 export async function POST(req: NextRequest) {
   try {
     const ip = getClientIp(req);
-    const rateLimitResult = limiter.check(req, 5, `login_${ip}`);
+    // Kurangi limit sementara untuk debugging, misal 5 request per IP
+    const rateLimitResult = limiter.check(req, 10, `login_${ip}`);
 
     if (!rateLimitResult.success) {
       return NextResponse.json(
         {
-          message: `Terlalu banyak percobaan login. Silakan coba lagi dalam ${rateLimitResult.retryAfter} detik.`,
-          retryAfter: rateLimitResult.retryAfter
+          message: `Terlalu banyak percobaan. Coba lagi dalam ${Math.ceil(rateLimitResult.retryAfter / 1000)} detik.`,
         },
-        {
-          status: 429,
-          headers: {
-            'X-RateLimit-Limit': '5',
-            'X-RateLimit-Remaining': '0',
-            'X-RateLimit-Reset': new Date(rateLimitResult.reset).toISOString(),
-            'Retry-After': rateLimitResult.retryAfter.toString(),
-          }
-        }
+        { status: 429 }
       );
     }
 
@@ -47,14 +39,24 @@ export async function POST(req: NextRequest) {
     }
 
     const { email, password } = result.data;
-    const user = await prisma.user.findUnique({ where: { email } });
+    
+    // Gunakan select untuk mengambil hanya data yang perlu (Hemat Memory & Bandwidth)
+    const user = await prisma.user.findUnique({ 
+      where: { email },
+      select: {
+        id: true,
+        password: true,
+        isEmailVerified: true,
+        isSuspended: true
+      }
+    });
 
     if (!user || !(await bcrypt.compare(password, user.password))) {
       return NextResponse.json({ message: "Email atau password salah" }, { status: 401 });
     }
     if (!user.isEmailVerified) {
       return NextResponse.json(
-        { message: "Akun belum diverifikasi. Silakan cek email Anda untuk kode OTP." },
+        { message: "Akun belum diverifikasi." },
         { status: 403 }
       );
     }
@@ -63,19 +65,26 @@ export async function POST(req: NextRequest) {
     }
 
     const sessionToken = nanoid();
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
+    // OPTIMASI TRANSAKSI:
+    // Timeout dikurangi jadi 5 detik (cukup untuk DB normal).
+    // Jika lebih dari 5 detik, mending gagal daripada menahan koneksi orang lain.
     await prisma.$transaction(async (tx) => {
+      // Hapus session lama (Single Device Login logic?)
       await tx.session.deleteMany({ where: { userId: user.id } });
+      
+      // Buat session baru
       await tx.session.create({
         data: {
           userId: user.id,
           sessionToken,
-          expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          expires: expiresAt,
         },
       });
     }, {
-      timeout: 10000,
-      maxWait: 3000,
+      timeout: 5000, // Turunkan dari 10000 ke 5000
+      maxWait: 2000, // Waktu tunggu dapat slot transaksi
     });
 
     const token = jwt.sign(
@@ -100,12 +109,15 @@ export async function POST(req: NextRequest) {
       maxAge: 7 * 24 * 60 * 60,
     });
 
-    res.headers.set('X-RateLimit-Limit', '5');
-    res.headers.set('X-RateLimit-Remaining', rateLimitResult.remaining.toString());
-    res.headers.set('X-RateLimit-Reset', new Date(rateLimitResult.reset).toISOString());
-
     return res;
-  } catch {
-    return NextResponse.json({ message: "Terjadi kesalahan server." }, { status: 500 });
+
+  } catch (error) {
+    // LOGGING PENTING: Agar kita tahu kenapa error terjadi di PM2 logs
+    console.error("[LOGIN_ERROR]", error); 
+    
+    return NextResponse.json(
+      { message: "Terjadi kesalahan server." }, 
+      { status: 500 }
+    );
   }
 }

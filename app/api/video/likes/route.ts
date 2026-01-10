@@ -103,11 +103,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
     });
 
-    let result: { action: 'created' | 'updated' | 'removed'; isLike: boolean };
     let likeDelta = 0;
     let dislikeDelta = 0;
 
-    const updatedVideo = await prisma.$transaction(async (tx) => {
+    const { result, video: updatedVideo } = await prisma.$transaction(async (tx) => {
+      let actionResult: { action: 'created' | 'updated' | 'removed'; isLike: boolean };
+
       if (existingLike) {
         if (existingLike.isLike === isLike) {
           // Remove the like/dislike (toggle off)
@@ -121,7 +122,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             dislikeDelta = -1;
           }
 
-          result = { action: 'removed', isLike };
+          actionResult = { action: 'removed', isLike };
         } else {
           // Switch from like to dislike or vice versa
           await (tx as any).videoLike.update({
@@ -137,7 +138,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             dislikeDelta = 1;
           }
 
-          result = { action: 'updated', isLike };
+          actionResult = { action: 'updated', isLike };
         }
       } else {
         // Create new like/dislike
@@ -156,11 +157,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           dislikeDelta = 1;
         }
 
-        result = { action: 'created', isLike };
+        actionResult = { action: 'created', isLike };
       }
 
       // Update video totals
-      return await tx.video.update({
+      const videoData = await tx.video.update({
         where: { id: video.id },
         data: {
           totalLikes: {
@@ -176,6 +177,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           totalDislikes: true,
         }
       }) as any;
+
+      return { result: actionResult, video: videoData };
     }, {
       timeout: 30000,
       maxWait: 5000,

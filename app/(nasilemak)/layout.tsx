@@ -8,73 +8,50 @@ import AppSidebar from "../../layout/nasilemak/AppSidebar";
 import Backdrop from "../../layout/nasilemak/Backdrop";
 
 function LayoutContent({ children }: { children: React.ReactNode }) {
-  const [authenticated, setAuthenticated] = useState<null | boolean>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [authState, setAuthState] = useState<"loading" | "authenticated" | "unauthenticated">("loading");
   const router = useRouter();
   const { isExpanded, isHovered, isMobileOpen } = useSidebar();
 
   useEffect(() => {
-    let isMounted = true;
-    
     const checkAuth = async () => {
       try {
-        console.log("[NasiLemak Layout] Checking auth...");
+        console.log("[NasiLemak] Starting auth check...");
         
         const res = await fetch("/api/auth/nasilemak", {
           method: "GET",
           credentials: "include",
-          cache: "no-store",
         });
 
-        console.log("[NasiLemak Layout] Auth response status:", res.status);
-
-        if (!isMounted) return;
-
-        if (!res.ok) {
-          console.log("[NasiLemak Layout] Auth response not OK, redirecting...");
-          router.replace("/nasi");
-          return;
-        }
+        console.log("[NasiLemak] Response status:", res.status);
 
         const data = await res.json();
-        console.log("[NasiLemak Layout] Auth data:", data);
+        console.log("[NasiLemak] Response data:", JSON.stringify(data));
         
-        if (!data.authenticated) {
-          console.log("[NasiLemak Layout] Not authenticated, redirecting...");
-          router.replace("/nasi");
+        if (res.ok && data.authenticated) {
+          console.log("[NasiLemak] Setting authenticated!");
+          setAuthState("authenticated");
         } else {
-          console.log("[NasiLemak Layout] Authenticated!");
-          setAuthenticated(true);
+          console.log("[NasiLemak] Not authenticated, will redirect");
+          setAuthState("unauthenticated");
         }
       } catch (err) {
-        console.error("[NasiLemak Layout] Auth check error:", err);
-        if (isMounted) {
-          setError("Failed to verify authentication");
-          // Don't redirect on network error, show error instead
-          setTimeout(() => {
-            router.replace("/nasi");
-          }, 2000);
-        }
+        console.error("[NasiLemak] Auth error:", err);
+        setAuthState("unauthenticated");
       }
     };
 
     checkAuth();
-    
-    return () => {
-      isMounted = false;
-    };
-  }, [router]);
+  }, []);
 
-  if (error) {
-    return (
-      <main className="min-h-screen flex flex-col items-center justify-center bg-gray-100">
-        <p className="text-red-500 mb-4">{error}</p>
-        <p className="text-gray-500">Redirecting to login...</p>
-      </main>
-    );
-  }
+  // Handle redirect after state change
+  useEffect(() => {
+    if (authState === "unauthenticated") {
+      console.log("[NasiLemak] Redirecting to /nasi...");
+      router.replace("/nasi");
+    }
+  }, [authState, router]);
 
-  if (authenticated === null) {
+  if (authState === "loading") {
     return (
       <main className="min-h-screen flex flex-col items-center justify-center bg-gray-100">
         <img
@@ -83,6 +60,14 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
           className="h-14 w-auto animate-pulse"
         />
         <p className="mt-4 text-gray-500">Verifying authentication...</p>
+      </main>
+    );
+  }
+
+  if (authState === "unauthenticated") {
+    return (
+      <main className="min-h-screen flex flex-col items-center justify-center bg-gray-100">
+        <p className="text-gray-500">Redirecting to login...</p>
       </main>
     );
   }

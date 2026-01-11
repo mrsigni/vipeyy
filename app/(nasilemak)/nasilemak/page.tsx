@@ -4,7 +4,6 @@ import React from "react";
 import MonthlyTarget from "@/components/ecommerce/nasilemak/MonthlyTarget";
 import MonthlySalesChart from "@/components/ecommerce/nasilemak/MonthlySalesChart";
 import StatisticsChart from "@/components/ecommerce/nasilemak/StatisticsChart";
-import { getAdminIdFromCookie } from "@/lib/auth-helpers";
 import { getCPM } from "@/lib/metrics-service";
 import {
   getPlatformMainMetrics,
@@ -12,7 +11,6 @@ import {
   getPlatformYearlyMetrics,
   getPlatformMonthlyMetrics,
 } from "@/lib/admin-metrics-service";
-import { redirect } from "next/navigation";
 
 export const metadata: Metadata = {
   title: "Admin Dashboard | Vipey",
@@ -23,18 +21,9 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export default async function AdminDashboard() {
-  let adminId: string;
+  // Layout already handles authentication, no need to check again here
   
-  try {
-    console.log("[Admin Dashboard] Verifying admin...");
-    adminId = await getAdminIdFromCookie();
-    console.log("[Admin Dashboard] Admin verified:", adminId);
-  } catch (error) {
-    console.error("[Admin Dashboard] Admin verification failed:", error);
-    redirect("/nasi");
-  }
-
-  // Fetch data with error handling for each
+  // Fetch data with error handling
   let cpm = 2.0;
   let mainMetrics = { totalEarnings: 0, totalVideos: 0, totalViews: 0 };
   let todayMetrics = { date: "", views: 0, earnings: 0 };
@@ -42,15 +31,12 @@ export default async function AdminDashboard() {
   let monthlyData: { date: string; views: number; earnings: number }[] = [];
 
   try {
-    console.log("[Admin Dashboard] Fetching CPM...");
     cpm = await getCPM();
-    console.log("[Admin Dashboard] CPM:", cpm);
   } catch (error) {
     console.error("[Admin Dashboard] Error fetching CPM:", error);
   }
 
   try {
-    console.log("[Admin Dashboard] Fetching metrics...");
     const results = await Promise.allSettled([
       getPlatformMainMetrics(),
       getPlatformTodayMetrics(cpm),
@@ -60,11 +46,9 @@ export default async function AdminDashboard() {
 
     if (results[0].status === "fulfilled") {
       mainMetrics = results[0].value;
-      console.log("[Admin Dashboard] Main metrics:", mainMetrics);
     }
     if (results[1].status === "fulfilled") {
       todayMetrics = results[1].value;
-      console.log("[Admin Dashboard] Today metrics:", todayMetrics);
     }
     if (results[2].status === "fulfilled") {
       yearlyEarnings = results[2].value;

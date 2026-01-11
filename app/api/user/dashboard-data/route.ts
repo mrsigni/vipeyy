@@ -60,7 +60,8 @@ export async function GET(req: NextRequest) {
     }
 
     // Fetch user's video IDs
-    let videoIds: string[] = [];
+    // PERBAIKAN: Mengubah tipe dari string[] menjadi number[] sesuai schema Prisma (Int)
+    let videoIds: number[] = [];
     try {
       const userVideos = await prisma.video.findMany({
         where: { userId },

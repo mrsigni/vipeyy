@@ -15,59 +15,91 @@ import {
 import { redirect } from "next/navigation";
 
 export const metadata: Metadata = {
-  title: "Dashboard | Vipey",
-  description: "Overview of your account, earnings, video performance, and recent activity on Vipey.",
+  title: "Admin Dashboard | Vipey",
+  description: "Platform overview for administrators.",
 };
 
-export default async function AdminDashboard() {
-  try {
-    await getAdminIdFromCookie();
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
-    const [cpm, mainMetrics, todayMetrics, yearlyEarnings, monthlyData] = await Promise.all([
-      getCPM(),
+export default async function AdminDashboard() {
+  let adminId: string;
+  
+  try {
+    console.log("[Admin Dashboard] Verifying admin...");
+    adminId = await getAdminIdFromCookie();
+    console.log("[Admin Dashboard] Admin verified:", adminId);
+  } catch (error) {
+    console.error("[Admin Dashboard] Admin verification failed:", error);
+    redirect("/nasi");
+  }
+
+  // Fetch data with error handling for each
+  let cpm = 2.0;
+  let mainMetrics = { totalEarnings: 0, totalVideos: 0, totalViews: 0 };
+  let todayMetrics = { date: "", views: 0, earnings: 0 };
+  let yearlyEarnings = Array.from({ length: 12 }, () => 0);
+  let monthlyData: { date: string; views: number; earnings: number }[] = [];
+
+  try {
+    console.log("[Admin Dashboard] Fetching CPM...");
+    cpm = await getCPM();
+    console.log("[Admin Dashboard] CPM:", cpm);
+  } catch (error) {
+    console.error("[Admin Dashboard] Error fetching CPM:", error);
+  }
+
+  try {
+    console.log("[Admin Dashboard] Fetching metrics...");
+    const results = await Promise.allSettled([
       getPlatformMainMetrics(),
-      getPlatformTodayMetrics(0),
-      getPlatformYearlyMetrics(0),
-      getPlatformMonthlyMetrics(0),
+      getPlatformTodayMetrics(cpm),
+      getPlatformYearlyMetrics(cpm),
+      getPlatformMonthlyMetrics(cpm),
     ]);
 
-    const todayWithCPM = {
-      views: todayMetrics.views,
-      earnings: (todayMetrics.views / 1000) * cpm,
-    };
-
-    const yearlyWithCPM = yearlyEarnings.map((_, index) => {
-      const monthViews = yearlyEarnings[index] * 1000 / (cpm || 1);
-      return (monthViews / 1000) * cpm;
-    });
-
-    const monthlyWithCPM = monthlyData.map(item => ({
-      ...item,
-      earnings: (item.views / 1000) * cpm,
-    }));
-
-    return (
-      <div className="grid grid-cols-12 gap-4 md:gap-6">
-        <div className="col-span-12 space-y-6 xl:col-span-7">
-          <PlatformOverviewMetrics
-            totalEarnings={mainMetrics.totalEarnings}
-            totalVideos={mainMetrics.totalVideos}
-          />
-          <MonthlySalesChart monthlyEarnings={yearlyWithCPM} />
-        </div>
-        <div className="col-span-12 xl:col-span-5">
-          <MonthlyTarget
-            views={todayWithCPM.views}
-            earnings={todayWithCPM.earnings}
-            target={100}
-          />
-        </div>
-        <div className="col-span-12">
-          <StatisticsChart dailyData={monthlyWithCPM} />
-        </div>
-      </div>
-    );
+    if (results[0].status === "fulfilled") {
+      mainMetrics = results[0].value;
+      console.log("[Admin Dashboard] Main metrics:", mainMetrics);
+    }
+    if (results[1].status === "fulfilled") {
+      todayMetrics = results[1].value;
+      console.log("[Admin Dashboard] Today metrics:", todayMetrics);
+    }
+    if (results[2].status === "fulfilled") {
+      yearlyEarnings = results[2].value;
+    }
+    if (results[3].status === "fulfilled") {
+      monthlyData = results[3].value;
+    }
   } catch (error) {
-    redirect("/admin/login");
+    console.error("[Admin Dashboard] Error fetching metrics:", error);
   }
+
+  const todayWithCPM = {
+    views: todayMetrics.views,
+    earnings: cpm > 0 ? (todayMetrics.views / 1000) * cpm : 0,
+  };
+
+  return (
+    <div className="grid grid-cols-12 gap-4 md:gap-6">
+      <div className="col-span-12 space-y-6 xl:col-span-7">
+        <PlatformOverviewMetrics
+          totalEarnings={mainMetrics.totalEarnings}
+          totalVideos={mainMetrics.totalVideos}
+        />
+        <MonthlySalesChart monthlyEarnings={yearlyEarnings} />
+      </div>
+      <div className="col-span-12 xl:col-span-5">
+        <MonthlyTarget
+          views={todayWithCPM.views}
+          earnings={todayWithCPM.earnings}
+          target={100}
+        />
+      </div>
+      <div className="col-span-12">
+        <StatisticsChart dailyData={monthlyData} />
+      </div>
+    </div>
+  );
 }

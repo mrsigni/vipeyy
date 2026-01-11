@@ -9,50 +9,80 @@ import Backdrop from "../../layout/nasilemak/Backdrop";
 
 function LayoutContent({ children }: { children: React.ReactNode }) {
   const [authenticated, setAuthenticated] = useState<null | boolean>(null);
+  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
   const { isExpanded, isHovered, isMobileOpen } = useSidebar();
 
   useEffect(() => {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
-
+    let isMounted = true;
+    
     const checkAuth = async () => {
       try {
+        console.log("[NasiLemak Layout] Checking auth...");
+        
         const res = await fetch("/api/auth/nasilemak", {
+          method: "GET",
           credentials: "include",
-          signal: controller.signal,
+          cache: "no-store",
         });
 
+        console.log("[NasiLemak Layout] Auth response status:", res.status);
+
+        if (!isMounted) return;
+
         if (!res.ok) {
-          router.replace("/login");
+          console.log("[NasiLemak Layout] Auth response not OK, redirecting...");
+          router.replace("/nasi");
           return;
         }
 
         const data = await res.json();
+        console.log("[NasiLemak Layout] Auth data:", data);
+        
         if (!data.authenticated) {
-          router.replace("/login");
+          console.log("[NasiLemak Layout] Not authenticated, redirecting...");
+          router.replace("/nasi");
         } else {
+          console.log("[NasiLemak Layout] Authenticated!");
           setAuthenticated(true);
         }
-      } catch {
-        router.replace("/login");
-      } finally {
-        clearTimeout(timeout);
+      } catch (err) {
+        console.error("[NasiLemak Layout] Auth check error:", err);
+        if (isMounted) {
+          setError("Failed to verify authentication");
+          // Don't redirect on network error, show error instead
+          setTimeout(() => {
+            router.replace("/nasi");
+          }, 2000);
+        }
       }
     };
 
     checkAuth();
-    return () => controller.abort();
+    
+    return () => {
+      isMounted = false;
+    };
   }, [router]);
+
+  if (error) {
+    return (
+      <main className="min-h-screen flex flex-col items-center justify-center bg-gray-100">
+        <p className="text-red-500 mb-4">{error}</p>
+        <p className="text-gray-500">Redirecting to login...</p>
+      </main>
+    );
+  }
 
   if (authenticated === null) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-gray-100">
+      <main className="min-h-screen flex flex-col items-center justify-center bg-gray-100">
         <img
           src="/logo.png"
           alt="Loading..."
           className="h-14 w-auto animate-pulse"
         />
+        <p className="mt-4 text-gray-500">Verifying authentication...</p>
       </main>
     );
   }

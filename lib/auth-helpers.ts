@@ -56,12 +56,14 @@ export async function getAdminIdFromCookie(): Promise<string> {
     const token = cookieStore.get("vipeyadminsession")?.value;
 
     if (!token) {
+        console.error("[Auth] No admin session token found");
         throw new Error("Unauthorized: No admin session token found");
     }
 
     try {
         const secret = process.env.JWT_SECRET;
         if (!secret) {
+            console.error("[Auth] JWT_SECRET not configured");
             throw new Error("Server configuration error");
         }
 
@@ -70,18 +72,34 @@ export async function getAdminIdFromCookie(): Promise<string> {
             new TextEncoder().encode(secret)
         );
 
+        console.log("[Auth] Admin JWT payload:", JSON.stringify(payload));
+
         const adminId = payload.adminId as string;
+        const sessionToken = payload.sessionToken as string;
 
         if (!adminId) {
+            console.error("[Auth] adminId not found in JWT payload");
             throw new Error("Invalid token: adminId not found in payload");
         }
 
-        const admin = await prisma.admin.findUnique({ where: { id: adminId } });
+        // Verify session exists and is valid
+        const session = await prisma.adminSession.findUnique({
+            where: { sessionToken },
+            include: { admin: true }
+        });
 
-        if (!admin) {
-            throw new Error("Forbidden: Not an admin");
+        if (!session) {
+            console.error("[Auth] Admin session not found in database");
+            throw new Error("Session not found");
         }
 
+        if (session.expires < new Date()) {
+            console.error("[Auth] Admin session expired");
+            await prisma.adminSession.delete({ where: { sessionToken } }).catch(() => {});
+            throw new Error("Session expired");
+        }
+
+        console.log("[Auth] Successfully authenticated adminId:", adminId);
         return adminId;
     } catch (error) {
         console.error("[Auth] Admin token verification failed:", error);

@@ -1,88 +1,93 @@
-import type { Metadata } from "next";
+"use client";
+
+import { useEffect, useState } from "react";
 import { PlatformOverviewMetrics } from "@/components/ecommerce/nasilemak/EcommerceMetrics";
-import React from "react";
 import MonthlyTarget from "@/components/ecommerce/nasilemak/MonthlyTarget";
 import MonthlySalesChart from "@/components/ecommerce/nasilemak/MonthlySalesChart";
 import StatisticsChart from "@/components/ecommerce/nasilemak/StatisticsChart";
-import { getCPM } from "@/lib/metrics-service";
-import {
-  getPlatformMainMetrics,
-  getPlatformTodayMetrics,
-  getPlatformYearlyMetrics,
-  getPlatformMonthlyMetrics,
-} from "@/lib/admin-metrics-service";
 
-export const metadata: Metadata = {
-  title: "Admin Dashboard | Vipey",
-  description: "Platform overview for administrators.",
-};
+interface DashboardData {
+  mainMetrics: { totalEarnings: number; totalVideos: number };
+  todayMetrics: { views: number; earnings: number };
+  yearlyEarnings: number[];
+  monthlyData: { date: string; views: number; earnings: number }[];
+}
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+export default function AdminDashboard() {
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-export default async function AdminDashboard() {
-  // Layout already handles authentication, no need to check again here
-  
-  // Fetch data with error handling
-  let cpm = 2.0;
-  let mainMetrics = { totalEarnings: 0, totalVideos: 0, totalViews: 0 };
-  let todayMetrics = { date: "", views: 0, earnings: 0 };
-  let yearlyEarnings = Array.from({ length: 12 }, () => 0);
-  let monthlyData: { date: string; views: number; earnings: number }[] = [];
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        // Fetch all dashboard data from a single API endpoint
+        const res = await fetch("/api/admin/dashboard-data", {
+          credentials: "include",
+        });
+        
+        if (!res.ok) {
+          throw new Error("Failed to fetch dashboard data");
+        }
+        
+        const result = await res.json();
+        setData(result);
+      } catch (err: any) {
+        console.error("Dashboard fetch error:", err);
+        setError(err.message || "Error loading dashboard");
+        // Set default data on error
+        setData({
+          mainMetrics: { totalEarnings: 0, totalVideos: 0 },
+          todayMetrics: { views: 0, earnings: 0 },
+          yearlyEarnings: Array.from({ length: 12 }, () => 0),
+          monthlyData: [],
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
 
-  try {
-    cpm = await getCPM();
-  } catch (error) {
-    console.error("[Admin Dashboard] Error fetching CPM:", error);
+    fetchData();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="grid grid-cols-12 gap-4 md:gap-6">
+        <div className="col-span-12 flex items-center justify-center py-20">
+          <div className="text-gray-500">Loading dashboard...</div>
+        </div>
+      </div>
+    );
   }
 
-  try {
-    const results = await Promise.allSettled([
-      getPlatformMainMetrics(),
-      getPlatformTodayMetrics(cpm),
-      getPlatformYearlyMetrics(cpm),
-      getPlatformMonthlyMetrics(cpm),
-    ]);
-
-    if (results[0].status === "fulfilled") {
-      mainMetrics = results[0].value;
-    }
-    if (results[1].status === "fulfilled") {
-      todayMetrics = results[1].value;
-    }
-    if (results[2].status === "fulfilled") {
-      yearlyEarnings = results[2].value;
-    }
-    if (results[3].status === "fulfilled") {
-      monthlyData = results[3].value;
-    }
-  } catch (error) {
-    console.error("[Admin Dashboard] Error fetching metrics:", error);
+  if (!data) {
+    return (
+      <div className="grid grid-cols-12 gap-4 md:gap-6">
+        <div className="col-span-12 flex items-center justify-center py-20">
+          <div className="text-red-500">{error || "Failed to load dashboard"}</div>
+        </div>
+      </div>
+    );
   }
-
-  const todayWithCPM = {
-    views: todayMetrics.views,
-    earnings: cpm > 0 ? (todayMetrics.views / 1000) * cpm : 0,
-  };
 
   return (
     <div className="grid grid-cols-12 gap-4 md:gap-6">
       <div className="col-span-12 space-y-6 xl:col-span-7">
         <PlatformOverviewMetrics
-          totalEarnings={mainMetrics.totalEarnings}
-          totalVideos={mainMetrics.totalVideos}
+          totalEarnings={data.mainMetrics.totalEarnings}
+          totalVideos={data.mainMetrics.totalVideos}
         />
-        <MonthlySalesChart monthlyEarnings={yearlyEarnings} />
+        <MonthlySalesChart monthlyEarnings={data.yearlyEarnings} />
       </div>
       <div className="col-span-12 xl:col-span-5">
         <MonthlyTarget
-          views={todayWithCPM.views}
-          earnings={todayWithCPM.earnings}
+          views={data.todayMetrics.views}
+          earnings={data.todayMetrics.earnings}
           target={100}
         />
       </div>
       <div className="col-span-12">
-        <StatisticsChart dailyData={monthlyData} />
+        <StatisticsChart dailyData={data.monthlyData} />
       </div>
     </div>
   );

@@ -8,45 +8,59 @@ import AppSidebar from "../../layout/nasilemak/AppSidebar";
 import Backdrop from "../../layout/nasilemak/Backdrop";
 
 function LayoutContent({ children }: { children: React.ReactNode }) {
-  const [authState, setAuthState] = useState<"loading" | "authenticated" | "unauthenticated">("loading");
+  const [authState, setAuthState] = useState<"loading" | "authenticated" | "unauthenticated" | "error">("loading");
+  const [errorMsg, setErrorMsg] = useState("");
   const router = useRouter();
   const { isExpanded, isHovered, isMobileOpen } = useSidebar();
 
   useEffect(() => {
+    let isMounted = true;
+    
     const checkAuth = async () => {
       try {
-        console.log("[NasiLemak] Starting auth check...");
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
         
         const res = await fetch("/api/auth/nasilemak", {
           method: "GET",
           credentials: "include",
+          signal: controller.signal,
         });
+        
+        clearTimeout(timeoutId);
 
-        console.log("[NasiLemak] Response status:", res.status);
+        if (!isMounted) return;
 
         const data = await res.json();
-        console.log("[NasiLemak] Response data:", JSON.stringify(data));
         
         if (res.ok && data.authenticated) {
-          console.log("[NasiLemak] Setting authenticated!");
           setAuthState("authenticated");
         } else {
-          console.log("[NasiLemak] Not authenticated, will redirect");
           setAuthState("unauthenticated");
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error("[NasiLemak] Auth error:", err);
-        setAuthState("unauthenticated");
+        if (!isMounted) return;
+        
+        if (err.name === "AbortError") {
+          setErrorMsg("Request timeout");
+        } else {
+          setErrorMsg(err.message || "Connection error");
+        }
+        setAuthState("error");
       }
     };
 
     checkAuth();
+    
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
-  // Handle redirect after state change
+  // Handle redirect
   useEffect(() => {
     if (authState === "unauthenticated") {
-      console.log("[NasiLemak] Redirecting to /nasi...");
       router.replace("/nasi");
     }
   }, [authState, router]);
@@ -59,7 +73,22 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
           alt="Loading..."
           className="h-14 w-auto animate-pulse"
         />
-        <p className="mt-4 text-gray-500">Verifying authentication...</p>
+        <p className="mt-4 text-gray-500">Memverifikasi...</p>
+      </main>
+    );
+  }
+
+  if (authState === "error") {
+    return (
+      <main className="min-h-screen flex flex-col items-center justify-center bg-gray-100">
+        <p className="text-red-500 mb-2">Gagal terhubung ke server</p>
+        <p className="text-gray-500 text-sm mb-4">{errorMsg}</p>
+        <button 
+          onClick={() => window.location.reload()}
+          className="px-4 py-2 bg-black text-white rounded-lg hover:bg-gray-800"
+        >
+          Coba Lagi
+        </button>
       </main>
     );
   }
@@ -67,7 +96,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
   if (authState === "unauthenticated") {
     return (
       <main className="min-h-screen flex flex-col items-center justify-center bg-gray-100">
-        <p className="text-gray-500">Redirecting to login...</p>
+        <p className="text-gray-500">Redirecting...</p>
       </main>
     );
   }

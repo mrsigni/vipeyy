@@ -19,32 +19,45 @@ export const metadata: Metadata = {
   description: "Overview of your account, earnings, video performance, and recent activity on Vipey.",
 };
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default async function Ecommerce() {
   try {
+    console.log("[Dashboard] Loading dashboard...");
+    
     const userId = await getUserIdFromCookie();
+    console.log("[Dashboard] Got userId:", userId);
 
-    const [cpm, mainMetrics, todayMetrics, yearlyEarnings, monthlyData] = await Promise.all([
-      getCPM(),
+    const cpm = await getCPM();
+    console.log("[Dashboard] CPM value:", cpm);
+
+    const [mainMetrics, todayMetrics, yearlyEarnings, monthlyData] = await Promise.all([
       getMainMetrics(userId),
-      getTodayMetrics(userId, 0),
-      getYearlyMetrics(userId, 0),
-      getMonthlyMetrics(userId, 0),
+      getTodayMetrics(userId, cpm),
+      getYearlyMetrics(userId, cpm),
+      getMonthlyMetrics(userId, cpm),
     ]);
+
+    console.log("[Dashboard] Main metrics:", mainMetrics);
+    console.log("[Dashboard] Today metrics:", todayMetrics);
 
     const todayWithCPM = {
       views: todayMetrics.views,
-      earnings: (todayMetrics.views / 1000) * cpm,
+      earnings: cpm > 0 ? (todayMetrics.views / 1000) * cpm : 0,
     };
 
-    const yearlyWithCPM = yearlyEarnings.map((_, index) => {
-      const monthViews = yearlyEarnings[index] * 1000 / (cpm || 1);
-      return (monthViews / 1000) * cpm;
+    const yearlyWithCPM = yearlyEarnings.map((earning, index) => {
+      // If cpm was 0 during fetch, recalculate
+      return earning;
     });
 
     const monthlyWithCPM = monthlyData.map(item => ({
       ...item,
-      earnings: (item.views / 1000) * cpm,
+      earnings: cpm > 0 ? (item.views / 1000) * cpm : item.earnings,
     }));
+
+    console.log("[Dashboard] Today with CPM:", todayWithCPM);
 
     return (
       <div className="grid grid-cols-12 gap-4 md:gap-6">
@@ -68,6 +81,7 @@ export default async function Ecommerce() {
       </div>
     );
   } catch (error) {
+    console.error("[Dashboard] Error loading dashboard:", error);
     redirect("/login");
   }
 }

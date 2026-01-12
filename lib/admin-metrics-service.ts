@@ -37,25 +37,28 @@ export async function getPlatformTodayMetrics(cpm: number) {
 
 export async function getPlatformYearlyMetrics(cpm: number) {
     const now = new Date();
-    const startOfYear = new Date(now.getFullYear(), 0, 1);
-    const endOfYear = new Date(now.getFullYear(), 11, 31, 23, 59, 59);
+    const year = now.getFullYear();
+    const startOfYear = new Date(year, 0, 1);
+    const endOfYear = new Date(year, 11, 31, 23, 59, 59);
 
-    const views = await prisma.videoView.findMany({
-        where: {
-            createdAt: { gte: startOfYear, lte: endOfYear },
-        },
-        select: { createdAt: true },
-    });
+    // Use raw query for efficient GROUP BY month aggregation
+    const results = await prisma.$queryRaw<Array<{ month: number; count: bigint }>>`
+        SELECT MONTH(createdAt) as month, COUNT(*) as count
+        FROM videoview
+        WHERE createdAt >= ${startOfYear}
+        AND createdAt <= ${endOfYear}
+        GROUP BY MONTH(createdAt)
+    `;
 
+    // Create map from results
     const monthlyMap = new Map<number, number>();
-
-    views.forEach((view: { createdAt: Date }) => {
-        const monthIndex = new Date(view.createdAt).getMonth();
-        monthlyMap.set(monthIndex, (monthlyMap.get(monthIndex) ?? 0) + 1);
+    results.forEach(row => {
+        monthlyMap.set(row.month, Number(row.count));
     });
 
-    const monthlyEarnings = Array.from({ length: 12 }, (_, monthIndex) => {
-        const views = monthlyMap.get(monthIndex) ?? 0;
+    // Generate array for all 12 months
+    const monthlyEarnings = Array.from({ length: 12 }, (_, index) => {
+        const views = monthlyMap.get(index + 1) ?? 0; // MySQL MONTH() returns 1-12
         return (views / 1000) * cpm;
     });
 
@@ -67,32 +70,26 @@ export async function getPlatformMonthlyMetrics(cpm: number) {
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
 
-    const views = await prisma.videoView.findMany({
-        where: {
-            createdAt: { gte: startOfMonth, lte: endOfMonth },
-        },
-        select: { createdAt: true },
+    // Use raw query for efficient GROUP BY date aggregation
+    const results = await prisma.$queryRaw<Array<{ date: Date; count: bigint }>>`
+        SELECT DATE(createdAt) as date, COUNT(*) as count
+        FROM videoview
+        WHERE createdAt >= ${startOfMonth}
+        AND createdAt <= ${endOfMonth}
+        GROUP BY DATE(createdAt)
+        ORDER BY DATE(createdAt) ASC
+    `;
+
+    // Transform results
+    const result = results.map(row => {
+        const dateObj = new Date(row.date);
+        const views = Number(row.count);
+        return {
+            date: dateObj.toLocaleDateString("id-ID", { day: "2-digit", month: "short" }),
+            views,
+            earnings: (views / 1000) * cpm,
+        };
     });
-
-    const viewMap = new Map<string, number>();
-
-    views.forEach((view: { createdAt: Date }) => {
-        const isoDate = view.createdAt.toISOString().split("T")[0];
-        viewMap.set(isoDate, (viewMap.get(isoDate) ?? 0) + 1);
-    });
-
-    const result = Array.from(viewMap.entries())
-        .map(([isoDate, count]) => {
-            const date = new Date(isoDate);
-            return {
-                date: date.toLocaleDateString("id-ID", { day: "2-digit", month: "short" }),
-                views: count,
-                earnings: (count / 1000) * cpm,
-                rawDate: isoDate,
-            };
-        })
-        .sort((a, b) => new Date(a.rawDate).getTime() - new Date(b.rawDate).getTime())
-        .map(({ rawDate, ...rest }) => rest);
 
     return result;
 }

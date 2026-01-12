@@ -5,6 +5,7 @@ import { Eye, EyeOff, Loader } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { z } from "zod";
 import { useRouter } from "next/navigation";
+import Turnstile from "react-turnstile";
 import {
   Select,
   SelectContent,
@@ -55,9 +56,21 @@ export default function RegisterPage() {
   const [countryCode, setCountryCode] = useState("+62");
   const router = useRouter();
 
+  const turnstileSiteKey = process.env.NEXT_PUBLIC_CLOUDFLARE_TURNSTILE_SITE_KEY || "";
+  const shouldUseTurnstile = process.env.NEXT_PUBLIC_TURNSTILE === "true";
+  const [isTurnstileVerified, setIsTurnstileVerified] = useState(!shouldUseTurnstile);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [turnstileWidgetId, setTurnstileWidgetId] = useState<string | null>(null);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrors({});
+
+    if (shouldUseTurnstile && !isTurnstileVerified) {
+      toast.error("Silakan verifikasi Turnstile terlebih dahulu");
+      return;
+    }
+
     setLoading(true);
 
     const result = registerSchema.safeParse({
@@ -89,6 +102,7 @@ export default function RegisterPage() {
           email,
           password,
           confirmPassword,
+          turnstileToken: shouldUseTurnstile ? turnstileToken : undefined,
         }),
       });
 
@@ -105,6 +119,13 @@ export default function RegisterPage() {
         } else {
           toast.error(data.message || "Registrasi gagal");
         }
+        if (shouldUseTurnstile) {
+          setIsTurnstileVerified(false);
+          setTurnstileToken(null);
+          if (turnstileWidgetId && typeof window !== 'undefined' && (window as any).turnstile) {
+            (window as any).turnstile.reset(turnstileWidgetId);
+          }
+        }
         setLoading(false);
         return;
       }
@@ -112,14 +133,15 @@ export default function RegisterPage() {
       setTimeout(() => router.push(`/register/otp?email=${encodeURIComponent(email)}`), 2000);
     } catch (err) {
       toast.error("Terjadi kesalahan");
+      if (shouldUseTurnstile) {
+        setIsTurnstileVerified(false);
+        setTurnstileToken(null);
+        if (turnstileWidgetId && typeof window !== 'undefined' && (window as any).turnstile) {
+          (window as any).turnstile.reset(turnstileWidgetId);
+        }
+      }
+      setLoading(false);
     }
-
-    setFullName("");
-    setWhatsapp("");
-    setEmail("");
-    setPassword("");
-    setConfirmPassword("");
-    setLoading(false);
   };
 
   const countryCodes = [
@@ -221,7 +243,7 @@ export default function RegisterPage() {
                   <SelectTrigger className="w-[100px] border-none px-2 text-sm focus:ring-0 focus:ring-offset-0 shadow-none rounded-none bg-white">
                     <SelectValue placeholder="+62" />
                   </SelectTrigger>
-                    <SelectContent className="bg-white dark:bg-neutral-900 border border-gray-200 dark:border-gray-700 shadow-lg">
+                  <SelectContent className="bg-white dark:bg-neutral-900 border border-gray-200 dark:border-gray-700 shadow-lg">
                     {countryCodes.map((c) => (
                       <SelectItem key={c.code} value={c.code}>
                         {c.icon} {c.code}
@@ -260,9 +282,8 @@ export default function RegisterPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Password"
-                  className={`w-full h-full px-4 pr-10 text-sm border rounded ${
-                    errors.password ? "border-red-500" : ""
-                  }`}
+                  className={`w-full h-full px-4 pr-10 text-sm border rounded ${errors.password ? "border-red-500" : ""
+                    }`}
                 />
                 <button
                   type="button"
@@ -284,9 +305,8 @@ export default function RegisterPage() {
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="Konfirmasi Password"
-                  className={`w-full h-full px-4 pr-10 text-sm border rounded ${
-                    errors.confirmPassword ? "border-red-500" : ""
-                  }`}
+                  className={`w-full h-full px-4 pr-10 text-sm border rounded ${errors.confirmPassword ? "border-red-500" : ""
+                    }`}
                 />
                 <button
                   type="button"
@@ -307,10 +327,40 @@ export default function RegisterPage() {
                 </p>
               )}
             </div>
+
+            {shouldUseTurnstile && (
+              <div className="mb-4 flex justify-center">
+                <Turnstile
+                  sitekey={turnstileSiteKey}
+                  onLoad={(widgetId) => {
+                    setTurnstileWidgetId(widgetId);
+                  }}
+                  onVerify={(token) => {
+                    setTurnstileToken(token);
+                    setIsTurnstileVerified(true);
+                  }}
+                  onError={() => {
+                    setIsTurnstileVerified(false);
+                    setTurnstileToken(null);
+                  }}
+                  onExpire={() => {
+                    setIsTurnstileVerified(false);
+                    setTurnstileToken(null);
+                  }}
+                  onTimeout={() => {
+                    setIsTurnstileVerified(false);
+                    setTurnstileToken(null);
+                  }}
+                  refreshExpired="auto"
+                  fixedSize={true}
+                />
+              </div>
+            )}
+
             <button
               type="submit"
-              disabled={loading}
-              className="bg-black text-white font-medium w-full py-2 rounded-full hover:opacity-90 transition flex items-center justify-center gap-2"
+              disabled={loading || (shouldUseTurnstile && !isTurnstileVerified)}
+              className="bg-black text-white font-medium w-full py-2 rounded-full hover:opacity-90 transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? <Loader className="w-4 h-4 animate-spin" /> : "Daftar"}
             </button>
@@ -356,6 +406,8 @@ export default function RegisterPage() {
           </ul>
         </nav>
       </footer>
+
+
     </div>
   );
 }

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Loader } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { z } from "zod";
@@ -15,7 +14,6 @@ const loginSchema = z.object({
 });
 
 export default function LoginPage() {
-  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -44,24 +42,22 @@ export default function LoginPage() {
       const res = await fetch("/api/login/nasilemak", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({ email, password }),
       });
 
       const data = await res.json();
-      console.log("[Admin Login] Response:", res.status, data);
 
       if (!res.ok) {
         toast.error(data.message || "Login gagal");
-        setLoading(false);
       } else {
-        toast.success("Login berhasil, redirecting...");
-        // Use router.push for client-side navigation
-        router.push("/nasilemak");
+        toast.success("Login berhasil");
+        setTimeout(() => {
+          window.location.href = "/nasilemak";
+        }, 2000);
       }
     } catch (err) {
-      console.error("[Admin Login] Error:", err);
       toast.error("Terjadi kesalahan saat login");
+    } finally {
       setLoading(false);
     }
   };

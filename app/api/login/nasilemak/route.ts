@@ -20,35 +20,16 @@ export async function POST(req: Request) {
     }
 
     const { email, password } = result.data;
-    console.log("[Admin Login] Attempt for email:", email);
 
-    // Check JWT_SECRET
-    if (!process.env.JWT_SECRET) {
-      console.error("[Admin Login] JWT_SECRET not configured");
-      return NextResponse.json({ message: "Server configuration error" }, { status: 500 });
-    }
-    
     const admin = await prisma.admin.findUnique({ where: { email } });
 
-    if (!admin) {
-      console.log("[Admin Login] Admin not found");
+    if (!admin || !(await bcrypt.compare(password, admin.password))) {
       return NextResponse.json({ message: "Email atau password salah" }, { status: 401 });
     }
-
-    const isPasswordValid = await bcrypt.compare(password, admin.password);
-    if (!isPasswordValid) {
-      console.log("[Admin Login] Invalid password");
-      return NextResponse.json({ message: "Email atau password salah" }, { status: 401 });
-    }
-
-    console.log("[Admin Login] Password verified for:", admin.email);
-
-    // Delete existing sessions
-    await prisma.adminSession.deleteMany({ where: { adminId: admin.id } });
 
     const sessionToken = nanoid();
 
-    // Create new session
+    await prisma.adminSession.deleteMany({ where: { adminId: admin.id } });
     await prisma.adminSession.create({
       data: {
         adminId: admin.id,
@@ -57,25 +38,22 @@ export async function POST(req: Request) {
       },
     });
 
-    console.log("[Admin Login] Session created");
+    const jwtPayload = {
+      adminId: admin.id,
+      sessionToken,
+    };
 
     const token = jwt.sign(
-      {
-        adminId: admin.id,
-        sessionToken,
-      },
-      process.env.JWT_SECRET,
+      jwtPayload,
+      process.env.JWT_SECRET!,
       {
         algorithm: "HS256",
         expiresIn: "7d",
       }
     );
 
-    console.log("[Admin Login] JWT created, setting cookie...");
-
-    const res = NextResponse.json({ 
-      message: "Login berhasil",
-      success: true
+    const res = NextResponse.json({
+      message: "Login berhasil"
     });
 
     res.cookies.set("vipeyadminsession", token, {
@@ -86,10 +64,9 @@ export async function POST(req: Request) {
       maxAge: 7 * 24 * 60 * 60,
     });
 
-    console.log("[Admin Login] Login successful for:", admin.email);
     return res;
   } catch (error) {
-    console.error("[Admin Login] Error:", error);
+    console.error("[ADMIN_LOGIN_ERROR]", error);
     return NextResponse.json({ message: "Terjadi kesalahan server." }, { status: 500 });
   }
 }

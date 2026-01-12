@@ -1,36 +1,39 @@
 // /app/api/video/details/route.ts
 
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@/lib/prisma'; // <-- 1. GANTI impor ini
+
+// 2. HAPUS baris ini: const prisma = new PrismaClient();
 
 export async function GET(request: Request) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const videoId = searchParams.get('videoId');
+  try {
+    const { searchParams } = new URL(request.url);
+    const videoId = searchParams.get('videoId');
 
-    if (!videoId) {
-      return NextResponse.json({ error: 'Video ID is required' }, { status: 400 });
-    }
+    if (!videoId) {
+      return NextResponse.json({ error: 'Video ID is required' }, { status: 400 });
+    }
 
-    const video = await prisma.video.findUnique({
-      where: {
-        videoId: videoId,
-      },
-      select: {
-        title: true,
-        totalViews: true,
-        totalLikes: true,
-        totalDislikes: true,
-      },
-    });
+    const video = await prisma.video.findUnique({
+      where: {
+        videoId: videoId,
+      },
+      select: {
+        title: true,
+        totalViews: true,
+        totalLikes: true,
+        totalDislikes: true,
+      },
+    });
 
-    if (!video) {
-      return NextResponse.json({ error: 'Video not found' }, { status: 404 });
-    }
+    if (!video) {
+      return NextResponse.json({ error: 'Video not found' }, { status: 404 });
+    }
 
-    return NextResponse.json(video, { status: 200 });
-  } catch (error) {
-    console.error('[Video Details API Error]:', error);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
-  }
+    return NextResponse.json(video, { status: 200 });
+  } catch (error) {
+    console.error('API Error:', error);
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+  }
+  // 3. HAPUS seluruh blok 'finally' dari sini
 }

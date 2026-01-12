@@ -1,10 +1,11 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { transporter } from "@/lib/mailer";
 import { randomBytes } from "crypto";
 import { addMinutes } from "date-fns";
+import { rateLimit, getClientIp } from "@/lib/rate-limit";
 
 const registerSchema = z
   .object({
@@ -46,8 +47,34 @@ async function generateUniqueUsername(name: string): Promise<string> {
   return username;
 }
 
-export async function POST(req: Request) {
+const limiter = rateLimit({
+  interval: 15 * 60 * 1000,
+  uniqueTokenPerInterval: 500,
+});
+
+export async function POST(req: NextRequest) {
   try {
+    const ip = getClientIp(req);
+    const rateLimitResult = limiter.check(req, 3, `register_${ip}`);
+
+    if (!rateLimitResult.success) {
+      return NextResponse.json(
+        {
+          message: `Terlalu banyak percobaan registrasi. Silakan coba lagi dalam ${rateLimitResult.retryAfter} detik.`,
+          retryAfter: rateLimitResult.retryAfter
+        },
+        {
+          status: 429,
+          headers: {
+            'X-RateLimit-Limit': '3',
+            'X-RateLimit-Remaining': '0',
+            'X-RateLimit-Reset': new Date(rateLimitResult.reset).toISOString(),
+            'Retry-After': rateLimitResult.retryAfter.toString(),
+          }
+        }
+      );
+    }
+
     const body = await req.json();
     const result = registerSchema.safeParse(body);
 
@@ -57,6 +84,47 @@ export async function POST(req: Request) {
     }
 
     const { fullName, whatsapp, email, password } = result.data;
+
+    if (process.env.NEXT_PUBLIC_TURNSTILE === "true") {
+      const { turnstileToken } = body;
+
+      if (!turnstileToken) {
+        return NextResponse.json(
+          { message: "Verifikasi keamanan diperlukan" },
+          { status: 400 }
+        );
+      }
+
+      try {
+        const verifyResponse = await fetch(
+          "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              secret: process.env.CLOUDFLARE_TURNSTILE_SECRET_KEY,
+              response: turnstileToken,
+            }),
+          }
+        );
+
+        const verifyData = await verifyResponse.json();
+
+        if (!verifyData.success) {
+          return NextResponse.json(
+            { message: "Verifikasi keamanan gagal. Silakan refresh halaman." },
+            { status: 400 }
+          );
+        }
+      } catch (error) {
+        console.error("Turnstile verification error:", error);
+        return NextResponse.json(
+          { message: "Terjadi kesalahan verifikasi keamanan." },
+          { status: 500 }
+        );
+      }
+    }
+
 
     const existing = await prisma.user.findFirst({
       where: { OR: [{ email }, { whatsapp }] },
@@ -72,25 +140,32 @@ export async function POST(req: Request) {
     const username = await generateUniqueUsername(fullName);
     const hashed = await bcrypt.hash(password, 10);
 
-    const newUser = await prisma.user.create({
-      data: {
-        fullName,
-        email,
-        whatsapp,
-        username,
-        password: hashed,
-      },
-    });
-
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const expiresAt = addMinutes(new Date(), 10);
 
-    await prisma.emailVerificationToken.create({
-      data: {
-        userId: newUser.id,
-        token: otp,
-        expiresAt,
-      },
+    const newUser = await prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          fullName,
+          email,
+          whatsapp,
+          username,
+          password: hashed,
+        },
+      });
+
+      await tx.emailVerificationToken.create({
+        data: {
+          userId: user.id,
+          token: otp,
+          expiresAt,
+        },
+      });
+
+      return user;
+    }, {
+      timeout: 10000,
+      maxWait: 3000,
     });
 
     await transporter.sendMail({
@@ -105,27 +180,21 @@ export async function POST(req: Request) {
       `,
     });
 
-    return NextResponse.json({
-      message: "Registrasi berhasil. OTP telah dikirim ke email Anda.",
-    });
+    return NextResponse.json(
+      {
+        message: "Registrasi berhasil. OTP telah dikirim ke email Anda.",
+      },
+      {
+        headers: {
+          'X-RateLimit-Limit': '3',
+          'X-RateLimit-Remaining': rateLimitResult.remaining.toString(),
+          'X-RateLimit-Reset': new Date(rateLimitResult.reset).toISOString(),
+        }
+      }
+    );
   } catch (err) {
-    console.error("[Register Error]:", err);
-    
-    if (err instanceof Error) {
-      // Email/SMTP errors
-      if (err.message.includes("SMTP") || err.message.includes("mail")) {
-        return NextResponse.json(
-          { message: "Gagal mengirim email verifikasi. Silakan coba lagi." },
-          { status: 500 }
-        );
-      }
-      // Database errors
-      if (err.message.includes("prisma") || err.message.includes("database") || err.message.includes("connect")) {
-        return NextResponse.json(
-          { message: "Gagal terhubung ke database." },
-          { status: 500 }
-        );
-      }
+    if (process.env.NODE_ENV !== "production") {
+      console.error("Register error:", err);
     }
 
     return NextResponse.json(

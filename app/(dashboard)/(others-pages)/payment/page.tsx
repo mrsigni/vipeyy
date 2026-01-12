@@ -77,15 +77,23 @@ export default function RequestPaymentPage() {
         body: JSON.stringify({ amount: value }),
       });
 
-      if (!res.ok) throw new Error();
-
       const data = await res.json();
+
+      if (!res.ok) {
+        // Tampilkan pesan error dari server jika ada
+        const errorMessage = data.error || "Terjadi kesalahan saat mengirim permintaan";
+        setResponseMessage(errorMessage);
+        setResponseType("error");
+        return;
+      }
+
       setAmount("");
       setAvailableToWithdraw(data.newBalance ?? availableToWithdraw - value);
+      setTotalWithdrawn(prev => prev + value);
       setResponseMessage("Permintaan pembayaran berhasil dikirim");
       setResponseType("success");
     } catch (err) {
-      setResponseMessage("Terjadi kesalahan saat mengirim permintaan");
+      setResponseMessage("Terjadi kesalahan jaringan. Silakan coba lagi.");
       setResponseType("error");
     } finally {
       setLoading(false);

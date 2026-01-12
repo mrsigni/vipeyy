@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Eye, EyeOff, Loader } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { z } from "zod";
+import Turnstile from "react-turnstile";
 
 const loginSchema = z.object({
   email: z
@@ -20,9 +21,21 @@ export default function LoginPage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
 
+  const turnstileSiteKey = process.env.NEXT_PUBLIC_CLOUDFLARE_TURNSTILE_SITE_KEY || "";
+  const shouldUseTurnstile = process.env.NEXT_PUBLIC_TURNSTILE === "true";
+  const [isTurnstileVerified, setIsTurnstileVerified] = useState(!shouldUseTurnstile);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [turnstileWidgetId, setTurnstileWidgetId] = useState<string | null>(null);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrors({});
+
+    if (shouldUseTurnstile && !isTurnstileVerified) {
+      toast.error("Silakan verifikasi Turnstile terlebih dahulu");
+      return;
+    }
+
     setLoading(true);
 
     const result = loginSchema.safeParse({ email, password });
@@ -42,13 +55,26 @@ export default function LoginPage() {
       const res = await fetch("/api/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({
+          email,
+          password,
+          turnstileToken: shouldUseTurnstile ? turnstileToken : undefined,
+        }),
       });
 
       const data = await res.json();
 
       if (!res.ok) {
         toast.error(data.message || "Login gagal");
+        if (shouldUseTurnstile) {
+          setIsTurnstileVerified(false);
+          setTurnstileToken(null);
+          if (turnstileWidgetId && typeof window !== 'undefined' && (window as any).turnstile) {
+            (window as any).turnstile.reset(turnstileWidgetId);
+          }
+        }
+        setLoading(false);
+        return;
       } else {
         toast.success("Login berhasil");
         setTimeout(() => {
@@ -56,8 +82,14 @@ export default function LoginPage() {
         }, 2000);
       }
     } catch (err) {
-      console.error("[Login Error]", err);
-      toast.error("Terjadi kesalahan koneksi. Silakan coba lagi.");
+      toast.error("Terjadi kesalahan saat login");
+      if (shouldUseTurnstile) {
+        setIsTurnstileVerified(false);
+        setTurnstileToken(null);
+        if (turnstileWidgetId && typeof window !== 'undefined' && (window as any).turnstile) {
+          (window as any).turnstile.reset(turnstileWidgetId);
+        }
+      }
     } finally {
       setLoading(false);
     }
@@ -117,9 +149,8 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="Email"
-                className={`w-full px-4 py-2 border rounded ${
-                  errors.email ? "border-red-500" : ""
-                }`}
+                className={`w-full px-4 py-2 border rounded ${errors.email ? "border-red-500" : ""
+                  }`}
               />
               {errors.email && (
                 <p className="text-sm text-red-600 mt-1">{errors.email}</p>
@@ -133,9 +164,8 @@ export default function LoginPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Password"
-                  className={`w-full h-full px-4 pr-10 text-sm border rounded ${
-                    errors.password ? "border-red-500" : ""
-                  }`}
+                  className={`w-full h-full px-4 pr-10 text-sm border rounded ${errors.password ? "border-red-500" : ""
+                    }`}
                 />
                 <button
                   type="button"
@@ -151,10 +181,39 @@ export default function LoginPage() {
               )}
             </div>
 
+            {shouldUseTurnstile && (
+              <div className="mb-4 flex justify-center">
+                <Turnstile
+                  sitekey={turnstileSiteKey}
+                  onLoad={(widgetId) => {
+                    setTurnstileWidgetId(widgetId);
+                  }}
+                  onVerify={(token) => {
+                    setTurnstileToken(token);
+                    setIsTurnstileVerified(true);
+                  }}
+                  onError={() => {
+                    setIsTurnstileVerified(false);
+                    setTurnstileToken(null);
+                  }}
+                  onExpire={() => {
+                    setIsTurnstileVerified(false);
+                    setTurnstileToken(null);
+                  }}
+                  onTimeout={() => {
+                    setIsTurnstileVerified(false);
+                    setTurnstileToken(null);
+                  }}
+                  refreshExpired="auto"
+                  fixedSize={true}
+                />
+              </div>
+            )}
+
             <button
               type="submit"
-              disabled={loading}
-              className="bg-black text-white font-medium w-full py-2 rounded-full hover:opacity-90 transition flex items-center justify-center gap-2"
+              disabled={loading || (shouldUseTurnstile && !isTurnstileVerified)}
+              className="bg-black text-white font-medium w-full py-2 rounded-full hover:opacity-90 transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? <Loader className="w-4 h-4 animate-spin" /> : "Login"}
             </button>
@@ -190,6 +249,7 @@ export default function LoginPage() {
           </nav>
         </footer>
       </main>
+
     </>
   );
 }

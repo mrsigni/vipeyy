@@ -408,3 +408,50 @@ Jika ada masalah deployment, contact:
 
 Last Updated: 2026-01-09  
 Version: 1.0.0
+
+# ========================================
+# FRESH DEPLOYMENT - CLEAN START
+# ========================================
+
+# 1. Stop dan hapus PM2
+pm2 stop all
+pm2 delete all
+pm2 save --force
+
+# 2. Backup .env (jaga credentials)
+cd ~/vipey-main
+cp .env .env.backup
+
+# 3. Hapus folder lama
+cd ~
+rm -rf vipey-main
+
+# 4. Clone fresh dari GitHub
+git clone https://github.com/Tianndev/vipey.git vipey-main
+cd vipey-main
+
+# 5. Restore .env
+cp ~/vipey-main/.env .env.backup
+
+# Atau manual edit .env jika backup hilang:
+# nano .env
+# Paste semua env vars (DATABASE_URL, JWT_SECRET, etc)
+
+# 6. Install dependencies
+npm install
+
+# 7. Generate Prisma Client
+npx prisma generate
+
+# 8. Build production
+npm run build
+
+# 9. Start PM2
+pm2 start ecosystem.config.js --env production
+pm2 save
+
+# 10. Monitor
+pm2 log --lines 30
+
+# 11. Check status
+pm2 status

@@ -7,35 +7,17 @@ export async function GET(req: NextRequest) {
   if (!token) return unauthenticated();
 
   try {
-    const secret = process.env.JWT_SECRET;
-    if (!secret) {
-      console.error("[Auth/Me] JWT_SECRET not configured");
-      return unauthenticated();
-    }
-
-    const { payload } = await jwtVerify(token, new TextEncoder().encode(secret));
+    const { payload } = await jwtVerify(token, new TextEncoder().encode(process.env.JWT_SECRET!));
     const sessionToken = payload.sessionToken as string;
     if (!sessionToken) return unauthenticated();
 
     const session = await prisma.session.findUnique({
       where: { sessionToken },
-      include: { 
-        user: {
-          select: {
-            id: true,
-            username: true,
-            email: true,
-            fullName: true,
-          }
-        } 
-      },
+      include: { user: true },
     });
 
     if (!session || session.expires < new Date()) {
-      // Delete expired session in background, don't wait
-      if (session) {
-        prisma.session.delete({ where: { sessionToken } }).catch(() => {});
-      }
+      await prisma.session.deleteMany({ where: { sessionToken } });
       return unauthenticated();
     }
 
@@ -49,8 +31,7 @@ export async function GET(req: NextRequest) {
     });
 
     return res;
-  } catch (error) {
-    console.error("[Auth/Me Error]:", error);
+  } catch {
     return unauthenticated();
   }
 }

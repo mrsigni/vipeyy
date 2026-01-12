@@ -1,94 +1,73 @@
-"use client";
-
-import { useEffect, useState } from "react";
+import type { Metadata } from "next";
 import { PlatformOverviewMetrics } from "@/components/ecommerce/nasilemak/EcommerceMetrics";
+import React from "react";
 import MonthlyTarget from "@/components/ecommerce/nasilemak/MonthlyTarget";
 import MonthlySalesChart from "@/components/ecommerce/nasilemak/MonthlySalesChart";
 import StatisticsChart from "@/components/ecommerce/nasilemak/StatisticsChart";
+import { getAdminIdFromCookie } from "@/lib/auth-helpers";
+import { getCPM } from "@/lib/metrics-service";
+import {
+  getPlatformMainMetrics,
+  getPlatformTodayMetrics,
+  getPlatformYearlyMetrics,
+  getPlatformMonthlyMetrics,
+} from "@/lib/admin-metrics-service";
+import { redirect } from "next/navigation";
 
-interface DashboardData {
-  mainMetrics: { totalEarnings: number; totalVideos: number };
-  todayMetrics: { views: number; earnings: number };
-  yearlyEarnings: number[];
-  monthlyData: { date: string; views: number; earnings: number }[];
-}
+export const metadata: Metadata = {
+  title: "Dashboard | Vipey",
+  description: "Overview of your account, earnings, video performance, and recent activity on Vipey.",
+};
 
-export default function AdminDashboard() {
-  const [data, setData] = useState<DashboardData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+export default async function AdminDashboard() {
+  try {
+    await getAdminIdFromCookie();
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        // Fetch all dashboard data from a single API endpoint
-        const res = await fetch("/api/admin/dashboard-data", {
-          credentials: "include",
-        });
-        
-        if (!res.ok) {
-          throw new Error("Failed to fetch dashboard data");
-        }
-        
-        const result = await res.json();
-        setData(result);
-      } catch (err: any) {
-        console.error("Dashboard fetch error:", err);
-        setError(err.message || "Error loading dashboard");
-        // Set default data on error
-        setData({
-          mainMetrics: { totalEarnings: 0, totalVideos: 0 },
-          todayMetrics: { views: 0, earnings: 0 },
-          yearlyEarnings: Array.from({ length: 12 }, () => 0),
-          monthlyData: [],
-        });
-      } finally {
-        setLoading(false);
-      }
+    const [cpm, mainMetrics, todayMetrics, yearlyEarnings, monthlyData] = await Promise.all([
+      getCPM(),
+      getPlatformMainMetrics(),
+      getPlatformTodayMetrics(0),
+      getPlatformYearlyMetrics(0),
+      getPlatformMonthlyMetrics(0),
+    ]);
+
+    const todayWithCPM = {
+      views: todayMetrics.views,
+      earnings: (todayMetrics.views / 1000) * cpm,
     };
 
-    fetchData();
-  }, []);
+    const yearlyWithCPM = yearlyEarnings.map((_, index) => {
+      const monthViews = yearlyEarnings[index] * 1000 / (cpm || 1);
+      return (monthViews / 1000) * cpm;
+    });
 
-  if (loading) {
+    const monthlyWithCPM = monthlyData.map(item => ({
+      ...item,
+      earnings: (item.views / 1000) * cpm,
+    }));
+
     return (
       <div className="grid grid-cols-12 gap-4 md:gap-6">
-        <div className="col-span-12 flex items-center justify-center py-20">
-          <div className="text-gray-500">Loading dashboard...</div>
+        <div className="col-span-12 space-y-6 xl:col-span-7">
+          <PlatformOverviewMetrics
+            totalEarnings={mainMetrics.totalEarnings}
+            totalVideos={mainMetrics.totalVideos}
+          />
+          <MonthlySalesChart monthlyEarnings={yearlyWithCPM} />
+        </div>
+        <div className="col-span-12 xl:col-span-5">
+          <MonthlyTarget
+            views={todayWithCPM.views}
+            earnings={todayWithCPM.earnings}
+            target={100}
+          />
+        </div>
+        <div className="col-span-12">
+          <StatisticsChart dailyData={monthlyWithCPM} />
         </div>
       </div>
     );
+  } catch (error) {
+    redirect("/admin/login");
   }
-
-  if (!data) {
-    return (
-      <div className="grid grid-cols-12 gap-4 md:gap-6">
-        <div className="col-span-12 flex items-center justify-center py-20">
-          <div className="text-red-500">{error || "Failed to load dashboard"}</div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="grid grid-cols-12 gap-4 md:gap-6">
-      <div className="col-span-12 space-y-6 xl:col-span-7">
-        <PlatformOverviewMetrics
-          totalEarnings={data.mainMetrics.totalEarnings}
-          totalVideos={data.mainMetrics.totalVideos}
-        />
-        <MonthlySalesChart monthlyEarnings={data.yearlyEarnings} />
-      </div>
-      <div className="col-span-12 xl:col-span-5">
-        <MonthlyTarget
-          views={data.todayMetrics.views}
-          earnings={data.todayMetrics.earnings}
-          target={100}
-        />
-      </div>
-      <div className="col-span-12">
-        <StatisticsChart dailyData={data.monthlyData} />
-      </div>
-    </div>
-  );
 }

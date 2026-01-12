@@ -9,18 +9,20 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Missing videoId' }, { status: 400 })
     }
 
-    const video = await prisma.video.findUnique({
-      where: { videoId },
-      select: { totalViews: true },
-    })
+    const totalViews = await prisma.video
+      .findUnique({
+        where: { videoId },
+        select: { totalViews: true },
+      })
+      .then((v: { totalViews: number } | null) => v?.totalViews)
 
-    if (!video) {
+    if (totalViews === undefined) {
       return NextResponse.json({ error: 'Video not found' }, { status: 404 })
     }
 
-    return NextResponse.json({ totalViews: video.totalViews ?? 0 })
+    return NextResponse.json({ totalViews })
   } catch (err) {
-    console.error('[Video Views Error]:', err)
+    console.error('[video-views] Error:', err)
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
 }

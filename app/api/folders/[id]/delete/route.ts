@@ -169,8 +169,6 @@ export async function DELETE(
       { error: 'Internal server error' },
       { status: 500 }
     );
-  } finally {
-    await prisma.$disconnect();
   }
 }
 
@@ -221,30 +219,34 @@ export async function POST(
     }
 
     // Recursive function untuk delete folder dan semua contents
-    async function deleteFolderRecursive(folderId: string, tx: any) {
+    async function deleteFolderRecursive(folderId: string, tx: any): Promise<number> {
       const folder = await tx.folder.findUnique({
         where: { id: folderId },
         include: {
           children: true,
           videos: {
-            include: {
-              views: true,
-              payouts: true,
-              payoutDetails: true
+            select: {
+              id: true,
+              earnings: true,
             }
           }
         }
       });
 
-      if (!folder) return;
+      if (!folder) return 0;
+
+      let totalEarningsDeleted = 0;
 
       // Delete all child folders recursively
       for (const child of folder.children) {
-        await deleteFolderRecursive(child.id, tx);
+        totalEarningsDeleted += await deleteFolderRecursive(child.id, tx);
       }
 
       // Delete all videos in this folder
       for (const video of folder.videos) {
+        // Accumulate earnings before deleting
+        totalEarningsDeleted += video.earnings;
+
         // Delete video views
         await tx.videoView.deleteMany({
           where: { videoId: video.id }
@@ -270,11 +272,23 @@ export async function POST(
       await tx.folder.delete({
         where: { id: folderId }
       });
+
+      return totalEarningsDeleted;
     }
 
     // Execute cascade delete in transaction
     await prisma.$transaction(async (tx) => {
-      await deleteFolderRecursive(id, tx);
+      const totalEarningsDeleted = await deleteFolderRecursive(id, tx);
+
+      // CRITICAL: Decrement user total earnings
+      if (totalEarningsDeleted > 0) {
+        await tx.user.update({
+          where: { id: existingFolder.userId },
+          data: {
+            totalEarnings: { decrement: totalEarningsDeleted },
+          },
+        });
+      }
     });
 
     return NextResponse.json(
@@ -291,7 +305,5 @@ export async function POST(
       { error: 'Internal server error' },
       { status: 500 }
     );
-  } finally {
-    await prisma.$disconnect();
   }
 }

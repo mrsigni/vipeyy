@@ -18,7 +18,7 @@ export async function GET(req: NextRequest, ctx: { params: ParamsPromise }) {
 
     const video = await prisma.video.findFirst({
       where: { id: idNum, userId },
-      include: { 
+      include: {
         _count: { select: { views: true } },
         folder: {
           select: { id: true, name: true, color: true }
@@ -36,8 +36,6 @@ export async function GET(req: NextRequest, ctx: { params: ParamsPromise }) {
   } catch (e) {
     console.error('Error getting video:', e);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
-  } finally {
-    await prisma.$disconnect();
   }
 }
 
@@ -121,7 +119,7 @@ export async function PUT(req: NextRequest, ctx: { params: ParamsPromise }) {
         description: description !== undefined ? (description?.trim() || null) : undefined,
         thumbnail: thumbnail !== undefined ? (thumbnail?.trim() || null) : undefined,
         duration: durationForDB,
-        fileSize: fileSizeForDB, 
+        fileSize: fileSizeForDB,
         mimeType: mimeType !== undefined ? (mimeType?.trim() || null) : undefined,
         isPublic: isPublic !== undefined ? Boolean(isPublic) : undefined,
       },
@@ -147,7 +145,7 @@ export async function PUT(req: NextRequest, ctx: { params: ParamsPromise }) {
     });
   } catch (e) {
     console.error('Error updating video:', e);
-    
+
     // Handle specific Prisma errors
     if (e instanceof Error) {
       if (e.message.includes('Record to update not found')) {
@@ -156,7 +154,7 @@ export async function PUT(req: NextRequest, ctx: { params: ParamsPromise }) {
           { status: 404 }
         );
       }
-      
+
       if (e.message.includes('Foreign key constraint')) {
         return NextResponse.json(
           { error: 'Invalid folder reference' },
@@ -166,8 +164,6 @@ export async function PUT(req: NextRequest, ctx: { params: ParamsPromise }) {
     }
 
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
-  } finally {
-    await prisma.$disconnect();
   }
 }
 
@@ -183,9 +179,15 @@ export async function DELETE(req: NextRequest, ctx: { params: ParamsPromise }) {
       return NextResponse.json({ error: 'Invalid id' }, { status: 400 });
     }
 
-    const existing = await prisma.video.findFirst({ 
+    const existing = await prisma.video.findFirst({
       where: { id: idNum, userId },
-      include: {
+      select: {
+        id: true,
+        videoId: true,
+        title: true,
+        userId: true,
+        earnings: true,
+        folderId: true,
         folder: {
           select: { id: true, name: true }
         }
@@ -210,6 +212,16 @@ export async function DELETE(req: NextRequest, ctx: { params: ParamsPromise }) {
         where: { videoId: existing.id }
       });
 
+      // CRITICAL: Decrement user total earnings
+      if (existing.earnings > 0) {
+        await tx.user.update({
+          where: { id: existing.userId },
+          data: {
+            totalEarnings: { decrement: existing.earnings },
+          },
+        });
+      }
+
       // Delete video
       await tx.video.delete({
         where: { id: existing.id }
@@ -226,7 +238,7 @@ export async function DELETE(req: NextRequest, ctx: { params: ParamsPromise }) {
       deletedAt: new Date().toISOString()
     });
 
-    return NextResponse.json({ 
+    return NextResponse.json({
       success: true,
       message: 'Video deleted successfully',
       deletedVideo: {
@@ -237,7 +249,7 @@ export async function DELETE(req: NextRequest, ctx: { params: ParamsPromise }) {
     });
   } catch (e) {
     console.error('Error deleting video:', e);
-    
+
     // Handle specific Prisma errors
     if (e instanceof Error) {
       if (e.message.includes('Record to delete does not exist')) {
@@ -249,7 +261,5 @@ export async function DELETE(req: NextRequest, ctx: { params: ParamsPromise }) {
     }
 
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
-  } finally {
-    await prisma.$disconnect();
   }
 }

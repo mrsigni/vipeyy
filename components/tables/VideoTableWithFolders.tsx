@@ -381,7 +381,7 @@ const DeleteQueueProgress: React.FC<DeleteQueueProgressProps> = ({ queue, onClos
           <span>{Math.round(progressPercentage)}%</span>
         </div>
         <div className="w-full bg-gray-200 rounded-full h-2">
-          <div 
+          <div
             className="bg-red-500 h-2 rounded-full transition-all duration-300"
             style={{ width: `${progressPercentage}%` }}
           />
@@ -482,7 +482,7 @@ const MoveQueueProgress: React.FC<MoveQueueProgressProps> = ({ queue, onClose, i
           <span>{Math.round(progressPercentage)}%</span>
         </div>
         <div className="w-full bg-gray-200 rounded-full h-2">
-          <div 
+          <div
             className="bg-blue-500 h-2 rounded-full transition-all duration-300"
             style={{ width: `${progressPercentage}%` }}
           />
@@ -615,7 +615,7 @@ export default function VideoTableWithFolders() {
     message: "",
     type: "folder",
     isForceDelete: false,
-    onConfirm: () => {},
+    onConfirm: () => { },
   });
 
   // ===== Breadcrumb Path =====
@@ -658,8 +658,8 @@ export default function VideoTableWithFolders() {
       const list = Array.isArray(videosJson)
         ? videosJson
         : Array.isArray(videosJson?.data)
-        ? videosJson.data
-        : [];
+          ? videosJson.data
+          : [];
 
       const pages =
         typeof videosJson?.totalPages === "number" && videosJson.totalPages > 0
@@ -679,7 +679,7 @@ export default function VideoTableWithFolders() {
   // ===== Delete Functions =====
   const processDelete = async (item: DeleteQueueItem) => {
     // Update item status to processing
-    setDeleteQueue(prev => prev.map(queueItem => 
+    setDeleteQueue(prev => prev.map(queueItem =>
       queueItem.id === item.id && queueItem.type === item.type
         ? { ...queueItem, status: "processing" }
         : queueItem
@@ -707,20 +707,20 @@ export default function VideoTableWithFolders() {
       }
 
       // Update item status to completed
-      setDeleteQueue(prev => prev.map(queueItem => 
+      setDeleteQueue(prev => prev.map(queueItem =>
         queueItem.id === item.id && queueItem.type === item.type
           ? { ...queueItem, status: "completed" }
           : queueItem
       ));
     } catch (error) {
       // Update item status to failed
-      setDeleteQueue(prev => prev.map(queueItem => 
+      setDeleteQueue(prev => prev.map(queueItem =>
         queueItem.id === item.id && queueItem.type === item.type
-          ? { 
-              ...queueItem, 
-              status: "failed", 
-              error: error instanceof Error ? error.message : "Unknown error" 
-            }
+          ? {
+            ...queueItem,
+            status: "failed",
+            error: error instanceof Error ? error.message : "Unknown error"
+          }
           : queueItem
       ));
     }
@@ -777,10 +777,10 @@ export default function VideoTableWithFolders() {
       const itemsToDelete: DeleteQueueItem[] = [];
 
       // Prepare video items
-      const videoIds = Array.from(selectedItems).filter(id => 
+      const videoIds = Array.from(selectedItems).filter(id =>
         videos.some(v => v.id.toString() === id)
       );
-      
+
       for (const videoId of videoIds) {
         const video = videos.find(v => v.id.toString() === videoId);
         if (video) {
@@ -794,7 +794,7 @@ export default function VideoTableWithFolders() {
       }
 
       // Prepare folder items
-      const folderIds = Array.from(selectedItems).filter(id => 
+      const folderIds = Array.from(selectedItems).filter(id =>
         folders.some(f => f.id === id)
       );
 
@@ -829,7 +829,7 @@ export default function VideoTableWithFolders() {
       // Check results
       const completedCount = itemsToDelete.length;
       const failedItems = deleteQueue.filter(item => item.status === "failed");
-      
+
       if (failedItems.length === 0) {
         toast.success(`Successfully deleted ${completedCount} item(s)!`);
       } else {
@@ -930,7 +930,7 @@ export default function VideoTableWithFolders() {
   // ===== Move Items with Queue =====
   const processMove = async (item: MoveQueueItem, targetFolderId?: string) => {
     // Update item status to processing
-    setMoveQueue(prev => prev.map(queueItem => 
+    setMoveQueue(prev => prev.map(queueItem =>
       queueItem.id === item.id && queueItem.type === item.type
         ? { ...queueItem, status: "processing" }
         : queueItem
@@ -952,27 +952,27 @@ export default function VideoTableWithFolders() {
       }
 
       // Update item status to completed
-      setMoveQueue(prev => prev.map(queueItem => 
+      setMoveQueue(prev => prev.map(queueItem =>
         queueItem.id === item.id && queueItem.type === item.type
           ? { ...queueItem, status: "completed" }
           : queueItem
       ));
     } catch (error) {
       // Update item status to failed
-      setMoveQueue(prev => prev.map(queueItem => 
+      setMoveQueue(prev => prev.map(queueItem =>
         queueItem.id === item.id && queueItem.type === item.type
-          ? { 
-              ...queueItem, 
-              status: "failed", 
-              error: error instanceof Error ? error.message : "Unknown error" 
-            }
+          ? {
+            ...queueItem,
+            status: "failed",
+            error: error instanceof Error ? error.message : "Unknown error"
+          }
           : queueItem
       ));
     }
   };
 
   const handleMoveItems = async (targetFolderId?: string) => {
-    const targetFolderName = targetFolderId 
+    const targetFolderName = targetFolderId
       ? folders.find(f => f.id === targetFolderId)?.name || "Unknown Folder"
       : "Root";
 
@@ -993,7 +993,7 @@ export default function VideoTableWithFolders() {
         itemsToMove = Array.from(selectedItems).map(id => {
           const folder = folders.find(f => f.id === id);
           const video = videos.find(v => v.id.toString() === id);
-          
+
           if (folder) {
             return {
               id: folder.id,
@@ -1034,7 +1034,7 @@ export default function VideoTableWithFolders() {
       // Check if all completed successfully
       const completedCount = itemsToMove.length;
       const failedItems = moveQueue.filter(item => item.status === "failed");
-      
+
       if (failedItems.length === 0) {
         toast.success(`Successfully moved ${completedCount} item(s)!`);
       } else {
@@ -1083,14 +1083,14 @@ export default function VideoTableWithFolders() {
 
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || window.location.origin;
     const links = videos.map(video => `${baseUrl}/v?id=${video.videoId}`).join('\n');
-    
+
     try {
       await navigator.clipboard.writeText(links);
       setCopiedAllVideos(true);
       setTimeout(() => setCopiedAllVideos(false), 2000);
-      
-      const contextText = currentFolderId 
-        ? `folder "${breadcrumbPath[breadcrumbPath.length - 1]?.name || 'ini'}"` 
+
+      const contextText = currentFolderId
+        ? `folder "${breadcrumbPath[breadcrumbPath.length - 1]?.name || 'ini'}"`
         : "root";
       toast.success(`${videos.length} link video dari ${contextText} berhasil disalin!`);
     } catch {
@@ -1150,7 +1150,8 @@ export default function VideoTableWithFolders() {
     new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: "USD",
-      minimumFractionDigits: 2,
+      minimumFractionDigits: 3,
+      maximumFractionDigits: 3,
     })
       .format(amount)
       .replace(/^US\$/, "$");
@@ -1339,9 +1340,8 @@ export default function VideoTableWithFolders() {
                 {currentFolders.map((folder) => (
                   <tr
                     key={folder.id}
-                    className={`border-b border-gray-100 hover:bg-gray-50 ${
-                      dragOver === folder.id ? "bg-blue-50" : ""
-                    }`}
+                    className={`border-b border-gray-100 hover:bg-gray-50 ${dragOver === folder.id ? "bg-blue-50" : ""
+                      }`}
                     draggable
                     onDragStart={(e) => handleDragStart(e, folder.id, "folder")}
                     onDragOver={(e) => handleDragOver(e, folder.id)}
@@ -1731,11 +1731,10 @@ export default function VideoTableWithFolders() {
               <button
                 key={i}
                 onClick={() => setCurrentPage(i + 1)}
-                className={`px-2.5 py-1.5 text-xs rounded-md border ${
-                  currentPage === i + 1
-                    ? "bg-blue-600 text-white border-blue-600"
-                    : "border-gray-300 text-gray-700 bg-white hover:bg-gray-100"
-                }`}
+                className={`px-2.5 py-1.5 text-xs rounded-md border ${currentPage === i + 1
+                  ? "bg-blue-600 text-white border-blue-600"
+                  : "border-gray-300 text-gray-700 bg-white hover:bg-gray-100"
+                  }`}
               >
                 {i + 1}
               </button>

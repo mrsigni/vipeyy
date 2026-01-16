@@ -35,74 +35,72 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid amount" }, { status: 400 });
     }
 
-    // Ambil semua video user untuk menghitung earnings secara konsisten
-    const videos = await prisma.video.findMany({
-      where: { userId },
-      select: {
-        id: true,
-        earnings: true,
-        withdrawnEarnings: true,
-      },
-      orderBy: { createdAt: "asc" },
-    });
+    const MIN_PAYOUT = 50.0;
 
-    if (!videos || videos.length === 0) {
-      return NextResponse.json({ error: "No videos found" }, { status: 404 });
-    }
-
-    // Hitung total earnings dan withdrawn dari semua video (konsisten dengan /api/payment/balance)
-    const totalEarnings = videos.reduce((sum, v) => sum + v.earnings, 0);
-    const totalWithdrawn = videos.reduce((sum, v) => sum + v.withdrawnEarnings, 0);
-    const available = Math.max(totalEarnings - totalWithdrawn, 0);
-
-    // Filter video yang punya saldo untuk ditarik
-    const videosWithBalance = videos.filter(v => (v.earnings - v.withdrawnEarnings) > 0);
-
-    if (videosWithBalance.length === 0) {
-      return NextResponse.json({ error: "No balance available to withdraw" }, { status: 400 });
-    }
-
-    if (amount > available) {
+    if (amount < MIN_PAYOUT) {
       return NextResponse.json(
-        {
-          error: "Requested amount exceeds available balance",
-          available,
-          requested: amount
-        },
+        { error: `Minimum payout amount is $${MIN_PAYOUT}` },
         { status: 400 }
       );
     }
 
-    const payout = await prisma.$transaction(async (tx) => {
-      let remaining = amount;
-      const payoutDetails: { videoId: number; amount: number }[] = [];
-      const videoUpdatePromises: Promise<any>[] = [];
+    const result = await prisma.$transaction(async (tx) => {
+      const pendingPayout = await tx.videoPayout.findFirst({
+        where: {
+          userId,
+          status: "pending",
+        },
+      });
 
-      for (const video of videosWithBalance) {
+      if (pendingPayout) {
+        throw new Error("PENDING_PAYOUT_EXISTS");
+      }
+
+      const videos = await tx.video.findMany({
+        where: { userId },
+        select: {
+          id: true,
+          earnings: true,
+          withdrawnEarnings: true,
+        },
+        orderBy: { createdAt: "asc" },
+      });
+
+      const totalEarnings = videos.reduce((acc, v) => acc + v.earnings, 0);
+      const totalWithdrawn = videos.reduce((acc, v) => acc + v.withdrawnEarnings, 0);
+      const available = totalEarnings - totalWithdrawn;
+
+      if (amount > available + 0.001) {
+        throw new Error("INSUFFICIENT_FUNDS");
+      }
+
+      let remaining = amount;
+      const payoutDetails = [];
+      const videoUpdatePromises = [];
+
+      for (const video of videos) {
         const availableOnVideo = video.earnings - video.withdrawnEarnings;
-        if (availableOnVideo <= 0) continue;
+        if (availableOnVideo <= 0.001) continue;
 
         const withdrawAmount = Math.min(availableOnVideo, remaining);
 
-        if (withdrawAmount > 0) {
-          videoUpdatePromises.push(
-            tx.video.update({
-              where: { id: video.id },
-              data: {
-                withdrawnEarnings: { increment: withdrawAmount },
-              },
-            })
-          );
+        videoUpdatePromises.push(
+          tx.video.update({
+            where: { id: video.id },
+            data: {
+              withdrawnEarnings: { increment: withdrawAmount },
+            },
+          })
+        );
 
-          payoutDetails.push({
-            videoId: video.id,
-            amount: withdrawAmount,
-          });
+        payoutDetails.push({
+          videoId: video.id,
+          amount: withdrawAmount,
+        });
 
-          remaining -= withdrawAmount;
-        }
+        remaining -= withdrawAmount;
 
-        if (remaining <= 0) break;
+        if (remaining <= 0.001) break;
       }
 
       await Promise.all(videoUpdatePromises);
@@ -123,7 +121,10 @@ export async function POST(req: Request) {
         })),
       });
 
-      return payout;
+      return {
+        payoutId: payout.id,
+        newBalance: available - amount,
+      };
     }, {
       timeout: 30000,
       maxWait: 5000,
@@ -131,11 +132,22 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       success: true,
-      payoutId: payout.id,
-      newBalance: available - amount,
+      payoutId: result.payoutId,
+      newBalance: result.newBalance,
     });
-  } catch (err) {
-    console.error("POST /api/payment/request error:", err);
+  } catch (err: any) {
+    if (err.message === "INSUFFICIENT_FUNDS") {
+      return NextResponse.json(
+        { error: "Requested amount exceeds available balance" },
+        { status: 400 }
+      );
+    }
+    if (err.message === "PENDING_PAYOUT_EXISTS") {
+      return NextResponse.json(
+        { error: "You already have a pending payout request. Please wait for it to be processed." },
+        { status: 400 }
+      );
+    }
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

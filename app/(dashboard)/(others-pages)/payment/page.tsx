@@ -80,20 +80,15 @@ export default function RequestPaymentPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        // Tampilkan pesan error dari server jika ada
-        const errorMessage = data.error || "Terjadi kesalahan saat mengirim permintaan";
-        setResponseMessage(errorMessage);
-        setResponseType("error");
-        return;
+        throw new Error(data.error || "Terjadi kesalahan saat mengirim permintaan");
       }
 
       setAmount("");
       setAvailableToWithdraw(data.newBalance ?? availableToWithdraw - value);
-      setTotalWithdrawn(prev => prev + value);
       setResponseMessage("Permintaan pembayaran berhasil dikirim");
       setResponseType("success");
-    } catch (err) {
-      setResponseMessage("Terjadi kesalahan jaringan. Silakan coba lagi.");
+    } catch (err: any) {
+      setResponseMessage(err.message || "Terjadi kesalahan saat mengirim permintaan");
       setResponseType("error");
     } finally {
       setLoading(false);
@@ -229,11 +224,10 @@ export default function RequestPaymentPage() {
 
               {responseMessage && (
                 <div
-                  className={`rounded-lg px-4 py-3 text-sm mt-2 text-center ${
-                    responseType === "success"
+                  className={`rounded-lg px-4 py-3 text-sm mt-2 text-center ${responseType === "success"
                       ? "bg-green-50 text-green-700 border border-green-200"
                       : "bg-red-50 text-red-700 border border-red-200"
-                  }`}
+                    }`}
                 >
                   {responseMessage}
                 </div>

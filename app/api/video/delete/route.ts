@@ -34,13 +34,34 @@ export async function DELETE(req: NextRequest) {
   }
 
   try {
-    const video = await prisma.video.findUnique({ where: { id } });
+    const video = await prisma.video.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        userId: true,
+        earnings: true
+      }
+    });
 
     if (!video || video.userId !== userId) {
       return NextResponse.json({ error: "Not found or forbidden" }, { status: 404 });
     }
 
-    await prisma.video.delete({ where: { id } });
+    // Delete video and decrement user earnings in transaction
+    await prisma.$transaction(async (tx) => {
+      // CRITICAL: Decrement user total earnings first
+      if (video.earnings > 0) {
+        await tx.user.update({
+          where: { id: video.userId },
+          data: {
+            totalEarnings: { decrement: video.earnings },
+          },
+        });
+      }
+
+      // Then delete the video (cascade will handle related records)
+      await tx.video.delete({ where: { id } });
+    });
 
     return NextResponse.json({ success: true });
   } catch (err) {

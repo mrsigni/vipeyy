@@ -90,33 +90,38 @@ export async function POST(req: NextRequest) {
 
     const earning = settings?.cpm ? settings.cpm / 1000 : 0;
 
-    await prisma.videoView.create({
-      data: {
-        videoId: video.id,
-        ip,
-        userAgent,
-        country,
-        isValid: true,
-      },
-    });
-
-    await prisma.video.update({
-      where: { id: video.id },
-      data: {
-        totalViews: { increment: 1 },
-        lastViewedAt: new Date(),
-        ...(earning > 0 ? { earnings: { increment: earning } } : {}),
-      },
-    });
-
-    if (earning > 0 && video.userId) {
-      await prisma.user.update({
-        where: { id: video.userId },
+    await prisma.$transaction(async (tx) => {
+      await tx.videoView.create({
         data: {
-          totalEarnings: { increment: earning },
+          videoId: video.id,
+          ip,
+          userAgent,
+          country,
+          isValid: true,
         },
       });
-    }
+
+      await tx.video.update({
+        where: { id: video.id },
+        data: {
+          totalViews: { increment: 1 },
+          lastViewedAt: new Date(),
+          ...(earning > 0 ? { earnings: { increment: earning } } : {}),
+        },
+      });
+
+      if (earning > 0 && video.userId) {
+        await tx.user.update({
+          where: { id: video.userId },
+          data: {
+            totalEarnings: { increment: earning },
+          },
+        });
+      }
+    }, {
+      timeout: 30000,
+      maxWait: 5000,
+    });
 
     return new Response(JSON.stringify({ success: true }), {
       status: 200,

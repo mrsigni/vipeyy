@@ -176,7 +176,7 @@ model VideoView {
 model VideoPayout {
   id        Int                   @id @default(autoincrement())
   videoId   Int?
-  video     Video?                @relation(fields: [videoId], references: [id])
+  video     Video?                @relation(fields: [videoId], references: [id], onDelete: Cascade)
   userId    String
   user      User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
   amount    Float
